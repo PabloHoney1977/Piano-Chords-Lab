@@ -167,7 +167,7 @@ function App(){
     /* Chord name + notes */
     e('div',{style:{...card, textAlign:'center'}},
       e('div',{style:{fontSize:'2rem',fontWeight:800}}, chordName(root, ch)),
-      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, chordNotes(root,ch).join(' · ')),
+      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, chordNotes(root,ch.ivls).join(' · ')),
       e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root}); },
         style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
           background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
