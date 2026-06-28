@@ -17,7 +17,7 @@ Live (GitHub Pages, served from `main`): https://pablohoney1977.github.io/Piano-
 Single-file React 18 PWA (CDN React, no bundler). All components, data, audio, and styles live in `app.js` (`e()` = `React.createElement`). CSS theme variables in `index.html`. Capacitor wraps it for iOS; Codemagic builds it (to be added, mirroring Jazz Guitar Lab).
 
 ## Roadmap (MVP → launch)
-- [ ] Inversions + voicing options on the keyboard
+- [x] Inversions + voicing display on the keyboard (Pro) — slash-chord naming + bass-note marker
 - [ ] Scales tab (major/minor/modes) with the same highlight engine
 - [ ] "Find chord" reverse lookup (tap keys → name the chord)
 - [ ] Real piano samples (port the sample-loading approach from Jazz Guitar Lab)

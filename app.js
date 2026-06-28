@@ -39,6 +39,15 @@ const FREE_TYPES = 4;
 const chordPCs   = (root, ivls) => ivls.map(i => (root + i) % 12);
 const chordNotes = (root, ivls) => ivls.map(i => NOTES[(root + i) % 12]);
 const chordName  = (root, ch)   => NOTES[root] + ch.sym;
+const INV_LABELS = ['Root', '1st', '2nd', '3rd', '4th'];
+
+/* Invert a chord: move the lowest `inv` notes up an octave, re-sort low→high.
+ * Returns the actual sounding midis and the bass (lowest) note's pitch class/midi. */
+function invertVoicing(rootMidi, ivls, inv){
+  const k = inv % ivls.length;
+  const midis = ivls.map((iv, idx) => rootMidi + iv + (idx < k ? 12 : 0)).sort((a, b) => a - b);
+  return { midis, bassMidi: midis[0], bassPC: midis[0] % 12 };
+}
 
 /* ── Audio (simple oscillator piano — port real samples from Jazz Guitar Lab later) ── */
 let _actx;
@@ -63,7 +72,7 @@ function playChord(midis){
 const track = (ev, props) => { try { window.posthog && window.posthog.capture(ev, props); } catch(_){} };
 
 /* ── Interactive keyboard (2 octaves from C4) ── */
-function Keyboard({ rootPC, tonePCs }){
+function Keyboard({ rootPC, tonePCs, bassMidi }){
   const OCT = 2, W = 46, H = 168, BW = 30, BH = 104;
   const whites = [];
   for (let o = 0; o < OCT; o++) for (let wi = 0; wi < 7; wi++){
@@ -78,25 +87,28 @@ function Keyboard({ rootPC, tonePCs }){
     blacks.push({ x:(o*7+ba+1)*W - BW/2, midi, pc:semi%12 });
   }
   const totalW = OCT*7*W;
-  const fill = (pc, isBlack) => {
-    if (pc === rootPC) return 'var(--root)';
-    if (tonePCs.includes(pc)) return 'var(--tone)';
+  // The specific lowest sounding key (the bass of the current inversion) wins over pitch-class tint.
+  const fill = (k, isBlack) => {
+    if (k.midi === bassMidi) return 'var(--bass)';
+    if (k.pc === rootPC) return 'var(--root)';
+    if (tonePCs.includes(k.pc)) return 'var(--tone)';
     return isBlack ? 'var(--black-key)' : 'var(--white-key)';
   };
+  const lit = (k) => k.midi === bassMidi || k.pc === rootPC || tonePCs.includes(k.pc);
   return e('svg', { viewBox:`0 0 ${totalW} ${H}`, width:'100%',
       style:{ display:'block', maxWidth:totalW, margin:'4px auto 0',
               transform:'translateZ(0)', WebkitTransform:'translateZ(0)' } },
     whites.map((k,i) => e('g', { key:'w'+i, onClick:()=>playMidi(k.midi), style:{cursor:'pointer'} },
       e('rect', { x:k.x+1, y:0, width:W-2, height:H, rx:4,
-        fill:fill(k.pc,false), stroke:'var(--border)', strokeWidth:1 }),
-      (k.pc===rootPC || tonePCs.includes(k.pc))
+        fill:fill(k,false), stroke:'var(--border)', strokeWidth:1 }),
+      lit(k)
         ? e('text', { x:k.x+W/2, y:H-12, textAnchor:'middle', fontSize:13, fontWeight:700,
             fill:'var(--dot-lbl)' }, NOTES[k.pc])
         : null
     )),
     blacks.map((k,i) => e('rect', { key:'b'+i, x:k.x, y:0, width:BW, height:BH, rx:3,
       onClick:()=>playMidi(k.midi),
-      fill:fill(k.pc,true), stroke:'var(--border)', strokeWidth:1, style:{cursor:'pointer'} }))
+      fill:fill(k,true), stroke:'var(--border)', strokeWidth:1, style:{cursor:'pointer'} }))
   );
 }
 
@@ -126,6 +138,7 @@ function UpgradeSheet({ feature, onClose, onUnlock }){
 function App(){
   const [root, setRoot]   = React.useState(() => +(localStorage.getItem('pc-root') ?? 0));
   const [ci, setCi]       = React.useState(0);                       // chord index
+  const [inv, setInv]     = React.useState(0);                       // inversion (0 = root position)
   const [level, setLevel] = React.useState(() => localStorage.getItem('pc-level') || 'essentials');
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
@@ -135,14 +148,23 @@ function App(){
   React.useEffect(()=>{ localStorage.setItem('pc-level', level); },[level]);
   React.useEffect(()=>{ track('app.loaded'); },[]);
 
-  const isPro = level === 'pro';
-  const ch    = CHORDS[ci];
-  const pcs   = chordPCs(root, ch.ivls);
-  const midis = ch.ivls.map(i => 60 + root + i);
+  const isPro  = level === 'pro';
+  const ch     = CHORDS[ci];
+  const pcs    = chordPCs(root, ch.ivls);
+  const maxInv = ch.ivls.length - 1;                 // triad→2, 7th→3, 9th→4
+  const invSafe = Math.min(inv, maxInv);             // clamp when switching to a smaller chord
+  const voicing = invertVoicing(60 + root, ch.ivls, invSafe);
+  const midis   = voicing.midis;
+  const displayName = invSafe > 0 ? chordName(root, ch) + ' / ' + NOTES[voicing.bassPC] : chordName(root, ch);
 
   const pickType = (i) => {
     if (i >= FREE_TYPES && !isPro){ setUpg(CHORDS[i].name); track('paywall.shown',{feature:CHORDS[i].name}); return; }
     setCi(i);
+    setInv(v => Math.min(v, CHORDS[i].ivls.length - 1));
+  };
+  const pickInv = (i) => {
+    if (i > 0 && !isPro){ setUpg('Inversions'); track('paywall.shown',{feature:'Inversions'}); return; }
+    setInv(i); track('inversion.picked',{inv:i,chord:ch.id});
   };
   const doUnlock = () => { setLevel('pro'); setUpg(null); track('upgrade.completed',{feature:upg}); };
 
@@ -164,17 +186,32 @@ function App(){
         theme==='dark' ? '☀' : '☾')
     ),
 
-    /* Chord name + notes */
+    /* Chord name + notes (voicing order, low→high) */
     e('div',{style:{...card, textAlign:'center'}},
-      e('div',{style:{fontSize:'2rem',fontWeight:800}}, chordName(root, ch)),
-      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, chordNotes(root,ch).join(' · ')),
-      e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root}); },
+      e('div',{style:{fontSize:'2rem',fontWeight:800}}, displayName),
+      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}},
+        midis.map(m=>NOTES[m%12]).join(' · ') + (invSafe>0 ? '  ·  '+INV_LABELS[invSafe]+' inversion' : '')),
+      e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root,inv:invSafe}); },
         style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
           background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
     ),
 
     /* Keyboard */
-    e('div',{style:card}, e(Keyboard,{ rootPC:root, tonePCs:pcs })),
+    e('div',{style:card}, e(Keyboard,{ rootPC:root, tonePCs:pcs, bassMidi: invSafe>0 ? voicing.bassMidi : null })),
+
+    /* Inversion picker (Pro beyond root position) */
+    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'INVERSION'),
+    e('div',{style:{display:'flex',gap:6,marginBottom:16}},
+      Array.from({length:maxInv+1}).map((_,i)=>{
+        const locked = i>0 && !isPro;
+        return e('button',{ key:i, onClick:()=>pickInv(i),
+          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.85rem',
+            border:'1px solid var(--border)',
+            background: i===invSafe ? 'var(--bass)' : 'var(--bg2)',
+            color: i===invSafe ? '#07070f' : (locked ? 'var(--hint)' : 'var(--txt)') } },
+          INV_LABELS[i], locked ? ' 🔒' : '');
+      })
+    ),
 
     /* Root picker */
     e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
