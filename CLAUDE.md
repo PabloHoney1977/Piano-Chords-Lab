@@ -30,13 +30,19 @@ styles inline in `app.js` (`e()` = `React.createElement`). CSS theme vars in `in
 Capacitor iOS + Codemagic CI to be added (mirror Jazz Guitar Lab's `ios/` + `codemagic.yaml`).
 
 ## What's Built (current `app.js`)
-A working **Build-a-Chord** core:
-- `NOTES`, `CHORDS` (16 types with semitone-interval formulas), `chordPCs/chordNotes/chordName` helpers.
-- `Keyboard` component: 2-octave clickable SVG piano; highlights root (red `--root`) and chord
-  tones (teal `--tone`) by pitch class across both octaves; `translateZ(0)` compositing hint
-  applied (iOS Safari filtered-SVG repaint gotcha — same as Jazz Guitar Lab's NeckSVG).
-- Oscillator-based `pianoNote`/`playChord`/`playMidi` audio (placeholder — port real samples).
-- Freemium gate: `FREE_TYPES = 4` (first 4 chord types free), rest open `UpgradeSheet`.
+A working **Build-a-Chord** core **+ a Scales tab**:
+- `NOTES`, `CHORDS` (16 types with semitone-interval formulas), generic `pcsFrom/notesFrom`
+  helpers (`chordPCs/chordNotes` alias them) + `chordName`/`scaleName`.
+- `SCALES` (12 types: major, natural minor, both pentatonics free; Dorian/Phrygian/Lydian/
+  Mixolydian/Locrian/harmonic+melodic minor/blues are Pro). `FREE_SCALES = 4`.
+- **Tab nav** (`tab` state, persisted `pc-tab`) switches Chords ⇄ Scales; both feed the *same*
+  `Keyboard` via `tonePCs` (chord PCs or scale PCs) — one highlight engine, two views.
+- `Keyboard` component: 2-octave clickable SVG piano; highlights root (red `--root`) and chord/
+  scale tones (teal `--tone`) by pitch class across both octaves; `translateZ(0)` compositing
+  hint applied (iOS Safari filtered-SVG repaint gotcha — same as Jazz Guitar Lab's NeckSVG).
+- Oscillator audio: `pianoNote`/`playMidi`/`playChord` + `playScale` (melodic run up to the octave).
+- Freemium gate: `FREE_TYPES = 4` (first 4 chord types) and `FREE_SCALES = 4` (first 4 scales);
+  locked items open `UpgradeSheet`.
 - Header with dev Pro toggle + theme toggle. localStorage keys prefixed `pc-` (`pc-root`,
   `pc-level`, `pc-theme`).
 - `PRICE` constant = single source of truth for the price string (learn from Jazz Guitar Lab,
@@ -52,9 +58,10 @@ A working **Build-a-Chord** core:
 - **Onboarding** first-run logic.
 
 ## Freemium Split
-- **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), all 12 roots, keyboard, audio.
-- **Pro:** all 16+ chord types, inversions (TODO), scales (TODO), reverse "find chord" (TODO),
-  full theory reference. One-time IAP, **no subscription**.
+- **Free (Essentials):** first 4 chord types (maj, min, dom7, min7) + first 4 scales (major,
+  natural minor, major & minor pentatonic), all 12 roots, keyboard, audio.
+- **Pro:** all 16+ chord types, all 12 scales (modes/blues/harmonic+melodic minor), inversions
+  (TODO), reverse "find chord" (TODO), full theory reference. One-time IAP, **no subscription**.
 
 ## Pricing — TBD
 `PRICE` in `app.js` is a **`$9.99` placeholder**. Decide via the same market-research lens used
@@ -63,9 +70,15 @@ chord/reference apps skew cheaper and more crowded than the jazz niche, so $4.99
 is the likely range — research before launch. Update only the `PRICE` constant.
 
 ## Next Session Priorities
-1. Inversions + voicing display on the keyboard.
-2. Scales tab reusing the highlight engine.
+1. Inversions + voicing display on the keyboard. *(Chords tab — still TODO on this branch.)*
+2. ~~Scales tab reusing the highlight engine.~~ ✅ **Done** (`SCALES`, tab nav, `playScale`, Pro gate).
 3. Port the `IAP` module + 7-day trial from Jazz Guitar Lab.
 4. App icons (192/512 for manifest + iOS set), Capacitor iOS project, `codemagic.yaml`.
 5. Pricing research → set `PRICE`.
 6. Smoke tests (Playwright, mirror Jazz Guitar Lab's `test/` harness).
+
+### Scales tab — notes for next time
+- Free/Pro split mirrors chords exactly (`FREE_SCALES = 4`, locked items → `UpgradeSheet`).
+- `playScale` runs ascending to the octave; consider down-run + tempo control later.
+- Scale *modes* could later show their parent-key relationship; degrees/intervals labels TODO.
+- Reverse "find chord/scale" and a theory reference are still the big Pro draws to build.

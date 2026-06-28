@@ -36,9 +36,32 @@ const CHORDS = [
 ];
 const FREE_TYPES = 4;
 
-const chordPCs   = (root, ivls) => ivls.map(i => (root + i) % 12);
-const chordNotes = (root, ivls) => ivls.map(i => NOTES[(root + i) % 12]);
+// id, display name, suffix label, semitone intervals from root.
+// First 4 are free (major / natural minor / both pentatonics — the everyday
+// reference scales); modes + blues + harmonic/melodic minor are Pro.
+const SCALES = [
+  {id:'major',     name:'Major',           sym:'Ionian',      ivls:[0,2,4,5,7,9,11]},
+  {id:'minor',     name:'Natural Minor',   sym:'Aeolian',     ivls:[0,2,3,5,7,8,10]},
+  {id:'majpent',   name:'Major Pentatonic',sym:'5-note',      ivls:[0,2,4,7,9]},
+  {id:'minpent',   name:'Minor Pentatonic',sym:'5-note',      ivls:[0,3,5,7,10]},
+  // ── Pro below ──
+  {id:'dorian',    name:'Dorian',          sym:'mode',        ivls:[0,2,3,5,7,9,10]},
+  {id:'phrygian',  name:'Phrygian',        sym:'mode',        ivls:[0,1,3,5,7,8,10]},
+  {id:'lydian',    name:'Lydian',          sym:'mode',        ivls:[0,2,4,6,7,9,11]},
+  {id:'mixo',      name:'Mixolydian',      sym:'mode',        ivls:[0,2,4,5,7,9,10]},
+  {id:'locrian',   name:'Locrian',         sym:'mode',        ivls:[0,1,3,5,6,8,10]},
+  {id:'harmmin',   name:'Harmonic Minor',  sym:'',            ivls:[0,2,3,5,7,8,11]},
+  {id:'melmin',    name:'Melodic Minor',   sym:'ascending',   ivls:[0,2,3,5,7,9,11]},
+  {id:'blues',     name:'Blues',           sym:'minor blues', ivls:[0,3,5,6,7,10]},
+];
+const FREE_SCALES = 4;
+
+const pcsFrom    = (root, ivls) => ivls.map(i => (root + i) % 12);
+const notesFrom  = (root, ivls) => ivls.map(i => NOTES[(root + i) % 12]);
+const chordPCs   = pcsFrom;
+const chordNotes = notesFrom;
 const chordName  = (root, ch)   => NOTES[root] + ch.sym;
+const scaleName  = (root, sc)   => NOTES[root] + ' ' + sc.name;
 
 /* ── Audio (simple oscillator piano — port real samples from Jazz Guitar Lab later) ── */
 let _actx;
@@ -58,6 +81,11 @@ function playMidi(midi){ const c = ctx(); if (c.state==='suspended') c.resume();
 function playChord(midis){
   const c = ctx(); if (c.state==='suspended') c.resume();
   midis.forEach((m,i) => pianoNote(c, m, c.currentTime + i*0.035, 1.7, 0.16));
+}
+function playScale(midis){
+  const c = ctx(); if (c.state==='suspended') c.resume();
+  const step = 0.18;
+  midis.forEach((m,i) => pianoNote(c, m, c.currentTime + i*step, 0.5, 0.2));
 }
 
 const track = (ev, props) => { try { window.posthog && window.posthog.capture(ev, props); } catch(_){} };
@@ -126,6 +154,8 @@ function UpgradeSheet({ feature, onClose, onUnlock }){
 function App(){
   const [root, setRoot]   = React.useState(() => +(localStorage.getItem('pc-root') ?? 0));
   const [ci, setCi]       = React.useState(0);                       // chord index
+  const [si, setSi]       = React.useState(0);                       // scale index
+  const [tab, setTab]     = React.useState(() => localStorage.getItem('pc-tab') || 'chords');
   const [level, setLevel] = React.useState(() => localStorage.getItem('pc-level') || 'essentials');
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
@@ -133,16 +163,30 @@ function App(){
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
   React.useEffect(()=>{ localStorage.setItem('pc-level', level); },[level]);
+  React.useEffect(()=>{ localStorage.setItem('pc-tab', tab); },[tab]);
   React.useEffect(()=>{ track('app.loaded'); },[]);
 
   const isPro = level === 'pro';
+  const onScales = tab === 'scales';
+
   const ch    = CHORDS[ci];
   const pcs   = chordPCs(root, ch.ivls);
   const midis = ch.ivls.map(i => 60 + root + i);
 
+  const sc       = SCALES[si];
+  const scPcs    = pcsFrom(root, sc.ivls);
+  const scMidis  = sc.ivls.map(i => 60 + root + i).concat([60 + root + 12]); // run up to the octave
+
+  // What the keyboard + root picker reflect depends on the active tab.
+  const tonePCs = onScales ? scPcs : pcs;
+
   const pickType = (i) => {
     if (i >= FREE_TYPES && !isPro){ setUpg(CHORDS[i].name); track('paywall.shown',{feature:CHORDS[i].name}); return; }
     setCi(i);
+  };
+  const pickScale = (i) => {
+    if (i >= FREE_SCALES && !isPro){ setUpg(SCALES[i].name + ' scale'); track('paywall.shown',{feature:SCALES[i].name+' scale'}); return; }
+    setSi(i);
   };
   const doUnlock = () => { setLevel('pro'); setUpg(null); track('upgrade.completed',{feature:upg}); };
 
@@ -164,17 +208,35 @@ function App(){
         theme==='dark' ? '☀' : '☾')
     ),
 
-    /* Chord name + notes */
-    e('div',{style:{...card, textAlign:'center'}},
-      e('div',{style:{fontSize:'2rem',fontWeight:800}}, chordName(root, ch)),
-      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, chordNotes(root,ch).join(' · ')),
-      e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root}); },
-        style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
-          background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
+    /* Tab nav — Chords / Scales (both reuse the keyboard highlight engine) */
+    e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:14}},
+      [['chords','Chords'],['scales','Scales']].map(([id,label])=>
+        e('button',{ key:id, onClick:()=>{ setTab(id); track('tab.changed',{tab:id}); },
+          style:{ padding:'10px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.92rem',
+            border:'1px solid var(--border)',
+            background: tab===id?'var(--accent)':'var(--bg2)',
+            color: tab===id?'#07070f':'var(--txt)' } }, label))
     ),
 
-    /* Keyboard */
-    e('div',{style:card}, e(Keyboard,{ rootPC:root, tonePCs:pcs })),
+    /* Name + notes card (chord or scale) */
+    onScales
+      ? e('div',{style:{...card, textAlign:'center'}},
+          e('div',{style:{fontSize:'2rem',fontWeight:800}}, scaleName(root, sc)),
+          e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, notesFrom(root,sc.ivls).join(' · ')),
+          e('button',{ onClick:()=>{ playScale(scMidis); track('scale.played',{scale:sc.id,root}); },
+            style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
+              background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play scale')
+        )
+      : e('div',{style:{...card, textAlign:'center'}},
+          e('div',{style:{fontSize:'2rem',fontWeight:800}}, chordName(root, ch)),
+          e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, chordNotes(root,ch).join(' · ')),
+          e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root}); },
+            style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
+              background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
+        ),
+
+    /* Keyboard (shared highlight engine) */
+    e('div',{style:card}, e(Keyboard,{ rootPC:root, tonePCs:tonePCs })),
 
     /* Root picker */
     e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
@@ -186,21 +248,36 @@ function App(){
           color: i===root?'#07070f':'var(--txt)' } }, n))
     ),
 
-    /* Chord type picker */
-    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'CHORD TYPE'),
-    e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
-      CHORDS.map((c,i)=>{
-        const locked = i>=FREE_TYPES && !isPro;
-        return e('button',{ key:c.id, onClick:()=>pickType(i),
-          style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
-            fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
-            background: i===ci?'var(--bg3)':'var(--bg2)',
-            color: locked?'var(--hint)':'var(--txt)',
-            display:'flex', justifyContent:'space-between', alignItems:'center' } },
-          e('span',null, c.name, ' ', e('span',{style:{color:'var(--hint)',fontSize:'.8rem'}}, c.sym)),
-          locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
-      })
-    ),
+    /* Type picker (chord types or scale types) */
+    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},
+      onScales ? 'SCALE TYPE' : 'CHORD TYPE'),
+    onScales
+      ? e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
+          SCALES.map((s,i)=>{
+            const locked = i>=FREE_SCALES && !isPro;
+            return e('button',{ key:s.id, onClick:()=>pickScale(i),
+              style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
+                fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
+                background: i===si?'var(--bg3)':'var(--bg2)',
+                color: locked?'var(--hint)':'var(--txt)',
+                display:'flex', justifyContent:'space-between', alignItems:'center' } },
+              e('span',null, s.name, ' ', s.sym ? e('span',{style:{color:'var(--hint)',fontSize:'.8rem'}}, s.sym) : null),
+              locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
+          })
+        )
+      : e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
+          CHORDS.map((c,i)=>{
+            const locked = i>=FREE_TYPES && !isPro;
+            return e('button',{ key:c.id, onClick:()=>pickType(i),
+              style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
+                fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
+                background: i===ci?'var(--bg3)':'var(--bg2)',
+                color: locked?'var(--hint)':'var(--txt)',
+                display:'flex', justifyContent:'space-between', alignItems:'center' } },
+              e('span',null, c.name, ' ', e('span',{style:{color:'var(--hint)',fontSize:'.8rem'}}, c.sym)),
+              locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
+          })
+        ),
 
     upg ? e(UpgradeSheet,{ feature:upg, onClose:()=>setUpg(null), onUnlock:doUnlock }) : null
   );
