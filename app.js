@@ -36,6 +36,24 @@ const CHORDS = [
 ];
 const FREE_TYPES = 4;
 
+// id, display name, semitone intervals from root (one octave). First 2 free, rest Pro.
+const SCALES = [
+  {id:'major',   name:'Major (Ionian)',     ivls:[0,2,4,5,7,9,11]},
+  {id:'natmin',  name:'Natural Minor',      ivls:[0,2,3,5,7,8,10]},
+  // ── Pro below ──
+  {id:'dorian',  name:'Dorian',             ivls:[0,2,3,5,7,9,10]},
+  {id:'phryg',   name:'Phrygian',           ivls:[0,1,3,5,7,8,10]},
+  {id:'lydian',  name:'Lydian',             ivls:[0,2,4,6,7,9,11]},
+  {id:'mixo',    name:'Mixolydian',         ivls:[0,2,4,5,7,9,10]},
+  {id:'locrian', name:'Locrian',            ivls:[0,1,3,5,6,8,10]},
+  {id:'harmin',  name:'Harmonic Minor',     ivls:[0,2,3,5,7,8,11]},
+  {id:'melmin',  name:'Melodic Minor',      ivls:[0,2,3,5,7,9,11]},
+  {id:'majpent', name:'Major Pentatonic',   ivls:[0,2,4,7,9]},
+  {id:'minpent', name:'Minor Pentatonic',   ivls:[0,3,5,7,10]},
+  {id:'blues',   name:'Blues',              ivls:[0,3,5,6,7,10]},
+];
+const FREE_SCALES = 2;
+
 const chordPCs   = (root, ivls) => ivls.map(i => (root + i) % 12);
 const chordNotes = (root, ivls) => ivls.map(i => NOTES[(root + i) % 12]);
 const chordName  = (root, ch)   => NOTES[root] + ch.sym;
@@ -68,6 +86,11 @@ function playMidi(midi){ const c = ctx(); if (c.state==='suspended') c.resume();
 function playChord(midis){
   const c = ctx(); if (c.state==='suspended') c.resume();
   midis.forEach((m,i) => pianoNote(c, m, c.currentTime + i*0.035, 1.7, 0.16));
+}
+// Ascending sequence (scales) — distinct, evenly-spaced notes.
+function playSeq(midis){
+  const c = ctx(); if (c.state==='suspended') c.resume();
+  midis.forEach((m,i) => pianoNote(c, m, c.currentTime + i*0.22, 0.45, 0.2));
 }
 
 const track = (ev, props) => { try { window.posthog && window.posthog.capture(ev, props); } catch(_){} };
@@ -136,14 +159,17 @@ function UpgradeSheet({ feature, onClose, onUnlock }){
 /* ── App ── */
 function App(){
   const [root, setRoot]   = React.useState(() => +(localStorage.getItem('pc-root') ?? 0));
+  const [tab, setTab]     = React.useState(() => localStorage.getItem('pc-tab') || 'chords');
   const [ci, setCi]       = React.useState(0);                       // chord index
   const [inv, setInv]     = React.useState(0);                       // inversion index
+  const [si, setSi]       = React.useState(0);                       // scale index
   const [level, setLevel] = React.useState(() => localStorage.getItem('pc-level') || 'essentials');
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
 
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
+  React.useEffect(()=>{ localStorage.setItem('pc-tab', tab); },[tab]);
   React.useEffect(()=>{ localStorage.setItem('pc-level', level); },[level]);
   React.useEffect(()=>{ track('app.loaded'); },[]);
 
@@ -154,6 +180,10 @@ function App(){
   const midis   = voicing(root, ch.ivls, safeInv);
   const bass    = midis[0];
 
+  // Scale: render one ascending octave (root → octave), root colored as the "bass".
+  const sc         = SCALES[si];
+  const scaleMidis = [...sc.ivls.map(i => 60 + root + i), 60 + root + 12];
+
   const pickType = (i) => {
     if (i >= FREE_TYPES && !isPro){ setUpg(CHORDS[i].name); track('paywall.shown',{feature:CHORDS[i].name}); return; }
     setCi(i);
@@ -162,6 +192,10 @@ function App(){
   const pickInv = (i) => {
     if (i > 0 && !isPro){ setUpg('Inversions'); track('paywall.shown',{feature:'Inversions'}); return; }
     setInv(i); track('inversion.picked',{inv:i,chord:ch.id});
+  };
+  const pickScale = (i) => {
+    if (i >= FREE_SCALES && !isPro){ setUpg(SCALES[i].name + ' scale'); track('paywall.shown',{feature:SCALES[i].name}); return; }
+    setSi(i); track('scale.picked',{scale:SCALES[i].id});
   };
   const doUnlock = () => { setLevel('pro'); setUpg(null); track('upgrade.completed',{feature:upg}); };
 
@@ -183,38 +217,61 @@ function App(){
         theme==='dark' ? '☀' : '☾')
     ),
 
-    /* Chord name + notes */
-    e('div',{style:{...card, textAlign:'center'}},
-      e('div',{style:{fontSize:'2rem',fontWeight:800}},
-        chordName(root, ch),
-        safeInv > 0 ? e('span',{style:{fontSize:'1rem',fontWeight:600,color:'var(--hint)'}}, '/' + NOTES[bass%12]) : null),
-      e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, midis.map(m=>NOTES[m%12]).join(' · ')),
-      safeInv > 0
-        ? e('div',{style:{fontSize:'.72rem',color:'var(--hint)',marginTop:2}}, INV_LABELS[safeInv] + ' inversion')
-        : null,
-      e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root,inv:safeInv}); },
-        style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
-          background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
+    /* Tabs */
+    e('div',{style:{display:'flex',gap:6,marginBottom:14}},
+      ['chords','scales'].map(t => e('button',{ key:t, onClick:()=>{ setTab(t); track('tab.switched',{tab:t}); },
+        style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
+          border:'1px solid var(--border)',
+          background: tab===t?'var(--accent)':'var(--bg2)',
+          color: tab===t?'#07070f':'var(--txt)' } }, t==='chords' ? 'Chords' : 'Scales'))
     ),
 
-    /* Keyboard */
-    e('div',{style:card}, e(Keyboard,{ voicing:midis, bassMidi:bass })),
+    tab==='chords'
+    ? e(React.Fragment,{key:'chords'},
+        /* Chord name + notes */
+        e('div',{style:{...card, textAlign:'center'}},
+          e('div',{style:{fontSize:'2rem',fontWeight:800}},
+            chordName(root, ch),
+            safeInv > 0 ? e('span',{style:{fontSize:'1rem',fontWeight:600,color:'var(--hint)'}}, '/' + NOTES[bass%12]) : null),
+          e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, midis.map(m=>NOTES[m%12]).join(' · ')),
+          safeInv > 0
+            ? e('div',{style:{fontSize:'.72rem',color:'var(--hint)',marginTop:2}}, INV_LABELS[safeInv] + ' inversion')
+            : null,
+          e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root,inv:safeInv}); },
+            style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
+              background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
+        ),
+        /* Keyboard */
+        e('div',{style:card}, e(Keyboard,{ voicing:midis, bassMidi:bass })),
+        /* Inversion picker (Pro) */
+        e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'INVERSION'),
+        e('div',{style:{display:'grid',gridTemplateColumns:`repeat(${ch.ivls.length},1fr)`,gap:6,marginBottom:16}},
+          ch.ivls.map((_,i)=>{
+            const locked = i>0 && !isPro;
+            return e('button',{ key:'inv'+i, onClick:()=>pickInv(i),
+              style:{ padding:'10px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.85rem',
+                border:'1px solid var(--border)',
+                background: i===safeInv?'var(--accent)':'var(--bg2)',
+                color: i===safeInv?'#07070f':(locked?'var(--hint)':'var(--txt)') } },
+              INV_LABELS[i], locked ? ' 🔒' : '');
+          })
+        )
+      )
+    : e(React.Fragment,{key:'scales'},
+        /* Scale name + notes */
+        e('div',{style:{...card, textAlign:'center'}},
+          e('div',{style:{fontSize:'2rem',fontWeight:800}}, NOTES[root] + ' ' + sc.name),
+          e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, sc.ivls.map(i=>NOTES[(root+i)%12]).join(' · ')),
+          e('div',{style:{fontSize:'.72rem',color:'var(--hint)',marginTop:2}}, sc.ivls.length + ' notes'),
+          e('button',{ onClick:()=>{ playSeq(scaleMidis); track('scale.played',{scale:sc.id,root}); },
+            style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
+              background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play scale')
+        ),
+        /* Keyboard */
+        e('div',{style:card}, e(Keyboard,{ voicing:scaleMidis, bassMidi:60+root }))
+      ),
 
-    /* Inversion picker (Pro) */
-    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'INVERSION'),
-    e('div',{style:{display:'grid',gridTemplateColumns:`repeat(${ch.ivls.length},1fr)`,gap:6,marginBottom:16}},
-      ch.ivls.map((_,i)=>{
-        const locked = i>0 && !isPro;
-        return e('button',{ key:'inv'+i, onClick:()=>pickInv(i),
-          style:{ padding:'10px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.85rem',
-            border:'1px solid var(--border)',
-            background: i===safeInv?'var(--accent)':'var(--bg2)',
-            color: i===safeInv?'#07070f':(locked?'var(--hint)':'var(--txt)') } },
-          INV_LABELS[i], locked ? ' 🔒' : '');
-      })
-    ),
-
-    /* Root picker */
+    /* Root picker (shared) */
     e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
     e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},
       NOTES.map((n,i)=>e('button',{ key:n, onClick:()=>setRoot(i),
@@ -224,21 +281,41 @@ function App(){
           color: i===root?'#07070f':'var(--txt)' } }, n))
     ),
 
-    /* Chord type picker */
-    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'CHORD TYPE'),
-    e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
-      CHORDS.map((c,i)=>{
-        const locked = i>=FREE_TYPES && !isPro;
-        return e('button',{ key:c.id, onClick:()=>pickType(i),
-          style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
-            fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
-            background: i===ci?'var(--bg3)':'var(--bg2)',
-            color: locked?'var(--hint)':'var(--txt)',
-            display:'flex', justifyContent:'space-between', alignItems:'center' } },
-          e('span',null, c.name, ' ', e('span',{style:{color:'var(--hint)',fontSize:'.8rem'}}, c.sym)),
-          locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
-      })
-    ),
+    tab==='chords'
+    ? e(React.Fragment,{key:'ctypes'},
+        /* Chord type picker */
+        e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'CHORD TYPE'),
+        e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
+          CHORDS.map((c,i)=>{
+            const locked = i>=FREE_TYPES && !isPro;
+            return e('button',{ key:c.id, onClick:()=>pickType(i),
+              style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
+                fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
+                background: i===ci?'var(--bg3)':'var(--bg2)',
+                color: locked?'var(--hint)':'var(--txt)',
+                display:'flex', justifyContent:'space-between', alignItems:'center' } },
+              e('span',null, c.name, ' ', e('span',{style:{color:'var(--hint)',fontSize:'.8rem'}}, c.sym)),
+              locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
+          })
+        )
+      )
+    : e(React.Fragment,{key:'stypes'},
+        /* Scale picker */
+        e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'SCALE'),
+        e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
+          SCALES.map((s,i)=>{
+            const locked = i>=FREE_SCALES && !isPro;
+            return e('button',{ key:s.id, onClick:()=>pickScale(i),
+              style:{ padding:'11px 12px', borderRadius:8, cursor:'pointer', textAlign:'left',
+                fontWeight:600, fontSize:'.9rem', border:'1px solid var(--border)',
+                background: i===si?'var(--bg3)':'var(--bg2)',
+                color: locked?'var(--hint)':'var(--txt)',
+                display:'flex', justifyContent:'space-between', alignItems:'center' } },
+              e('span',null, s.name),
+              locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
+          })
+        )
+      ),
 
     upg ? e(UpgradeSheet,{ feature:upg, onClose:()=>setUpg(null), onUnlock:doUnlock }) : null
   );
