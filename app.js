@@ -95,6 +95,57 @@ function playSeq(midis){
 
 const track = (ev, props) => { try { window.posthog && window.posthog.capture(ev, props); } catch(_){} };
 
+/* ── Entitlement model (ported from Jazz Guitar Lab's effectiveLevel architecture) ──
+ * Two levels of truth:
+ *   owned  — what the user actually purchased ('essentials' | 'pro'), in pc-level
+ *   trial  — a one-time 7-day Pro trial, start timestamp in pc-trial-start
+ * The *effective* level the UI gates on is the max of (owned, active trial). Once the
+ * trial is started it can't be restarted (presence of pc-trial-start = "used"). */
+const TRIAL_DAYS = 7;
+const DAY_MS = 86400000;
+const trialMsLeft = (start, now) => start ? Math.max(0, start + TRIAL_DAYS*DAY_MS - now) : 0;
+const effectiveLevel = (owned, start, now) =>
+  (owned === 'pro' || trialMsLeft(start, now) > 0) ? 'pro' : 'essentials';
+
+/* ── IAP (RevenueCat via Capacitor) ──
+ * RevenueCat ships as a Capacitor plugin, so it only exists on device; on the web PWA
+ * `native` is false and every method no-ops/returns false (the dev Pro toggle and the
+ * web "unlock" path keep the browser build testable). Entitlement id `pro`, product
+ * `pro_unlock` — mirror Jazz Guitar Lab. Verify the plugin's response shapes against the
+ * installed @revenuecat/purchases-capacitor version when the iOS project is added. */
+const IAP = {
+  API_KEY: (typeof window !== 'undefined' && window.__REVENUECAT_KEY__) || '__REVENUECAT_KEY__',
+  ENTITLEMENT: 'pro',
+  PRODUCT: 'pro_unlock',
+  _configured: false,
+  get plugin(){ try { return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Purchases; } catch(_){ return null; } },
+  get native(){ try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && this.plugin); } catch(_){ return false; } },
+  _active(info){ try { return !!(info && info.entitlements && info.entitlements.active && info.entitlements.active[this.ENTITLEMENT]); } catch(_){ return false; } },
+  async configure(){
+    if (this._configured || !this.native) return;
+    try { await this.plugin.configure({ apiKey: this.API_KEY }); this._configured = true; } catch(_){}
+  },
+  async isEntitled(){
+    if (!this.native) return false;
+    try { const r = await this.plugin.getCustomerInfo(); return this._active(r && r.customerInfo); } catch(_){ return false; }
+  },
+  async purchase(){
+    if (!this.native) return false;
+    try {
+      const offerings = await this.plugin.getOfferings();
+      const cur = offerings && (offerings.current || (offerings.all && offerings.all.default));
+      const pkg = cur && cur.availablePackages && cur.availablePackages[0];
+      if (!pkg) return false;
+      const r = await this.plugin.purchasePackage({ aPackage: pkg });
+      return this._active(r && r.customerInfo);
+    } catch(_){ return false; }
+  },
+  async restore(){
+    if (!this.native) return false;
+    try { const r = await this.plugin.restorePurchases(); return this._active(r && r.customerInfo); } catch(_){ return false; }
+  },
+};
+
 /* ── Interactive keyboard (3 octaves from C4) ──
  * Renders the literal voicing (actual sounding notes), so inversions are visible:
  * the bass note is colored --root, the upper chord tones --tone. */
@@ -134,8 +185,8 @@ function Keyboard({ voicing, bassMidi }){
   );
 }
 
-/* ── Upgrade sheet (stub — wire RevenueCat later, see CLAUDE.md) ── */
-function UpgradeSheet({ feature, onClose, onUnlock }){
+/* ── Upgrade sheet (RevenueCat purchase + 7-day trial + restore) ── */
+function UpgradeSheet({ feature, canTrial, busy, onClose, onUnlock, onStartTrial, onRestore }){
   return e('div', { onClick:onClose, style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
       display:'flex', alignItems:'flex-end', zIndex:50 } },
     e('div', { onClick:ev=>ev.stopPropagation(), style:{ width:'100%', maxWidth:720, margin:'0 auto',
@@ -146,12 +197,24 @@ function UpgradeSheet({ feature, onClose, onUnlock }){
       e('div',{style:{fontSize:'.92rem',color:'var(--hint)',marginBottom:18,lineHeight:1.5}},
         (feature?feature+' is a Pro feature. ':'') +
         'Pro unlocks every chord type, all inversions, scales, and the full theory reference — one price, forever. No subscription.'),
-      e('button',{ onClick:onUnlock, style:{ width:'100%', padding:15, borderRadius:10, cursor:'pointer',
+      e('button',{ onClick:onUnlock, disabled:busy, style:{ width:'100%', padding:15, borderRadius:10,
+          cursor:busy?'default':'pointer', opacity:busy?0.6:1,
           fontWeight:700, fontSize:'1rem', background:'var(--gold)', border:'none', color:'#07070f' } },
-        'Unlock Pro — ' + PRICE),
-      e('button',{ onClick:onClose, style:{ width:'100%', padding:12, marginTop:10, borderRadius:10,
-          cursor:'pointer', fontWeight:600, background:'transparent', border:'none', color:'var(--hint)' } },
-        'Maybe later')
+        busy ? 'Working…' : 'Unlock Pro — ' + PRICE),
+      canTrial
+        ? e('button',{ onClick:onStartTrial, disabled:busy, style:{ width:'100%', padding:13, marginTop:10,
+            borderRadius:10, cursor:busy?'default':'pointer', fontWeight:700, fontSize:'.95rem',
+            background:'transparent', border:'1px solid var(--gold)', color:'var(--gold)' } },
+            'Start 7-day free trial')
+        : null,
+      e('div',{style:{display:'flex',gap:8,marginTop:10}},
+        e('button',{ onClick:onRestore, disabled:busy, style:{ flex:1, padding:12, borderRadius:10,
+            cursor:busy?'default':'pointer', fontWeight:600, background:'transparent', border:'none', color:'var(--hint)' } },
+          'Restore'),
+        e('button',{ onClick:onClose, disabled:busy, style:{ flex:1, padding:12, borderRadius:10,
+            cursor:busy?'default':'pointer', fontWeight:600, background:'transparent', border:'none', color:'var(--hint)' } },
+          'Maybe later')
+      )
     )
   );
 }
@@ -163,17 +226,30 @@ function App(){
   const [ci, setCi]       = React.useState(0);                       // chord index
   const [inv, setInv]     = React.useState(0);                       // inversion index
   const [si, setSi]       = React.useState(0);                       // scale index
-  const [level, setLevel] = React.useState(() => localStorage.getItem('pc-level') || 'essentials');
+  const [owned, setOwned] = React.useState(() => localStorage.getItem('pc-level') || 'essentials'); // purchased level
+  const [trialStart, setTrialStart] = React.useState(() => +(localStorage.getItem('pc-trial-start') || 0));
+  const [now, setNow]     = React.useState(() => Date.now());        // drives trial countdown / expiry
+  const [busy, setBusy]   = React.useState(false);                  // IAP call in flight
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
 
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
   React.useEffect(()=>{ localStorage.setItem('pc-tab', tab); },[tab]);
-  React.useEffect(()=>{ localStorage.setItem('pc-level', level); },[level]);
+  React.useEffect(()=>{ localStorage.setItem('pc-level', owned); },[owned]);
+  React.useEffect(()=>{ if (trialStart) localStorage.setItem('pc-trial-start', trialStart); },[trialStart]);
   React.useEffect(()=>{ track('app.loaded'); },[]);
+  // Sync real RevenueCat entitlements on launch (no-op on web).
+  React.useEffect(()=>{ (async()=>{ await IAP.configure(); if (await IAP.isEntitled()) setOwned('pro'); })(); },[]);
+  // Re-check trial expiry once a minute so Pro features lock the moment it lapses.
+  React.useEffect(()=>{ const id = setInterval(()=>setNow(Date.now()), 60000); return ()=>clearInterval(id); },[]);
 
-  const isPro = level === 'pro';
+  const effLevel    = effectiveLevel(owned, trialStart, now);
+  const isPro       = effLevel === 'pro';
+  const msLeft      = trialMsLeft(trialStart, now);
+  const onTrial     = owned !== 'pro' && msLeft > 0;
+  const trialDays   = Math.ceil(msLeft / DAY_MS);
+  const canTrial    = !trialStart;                                   // never started = eligible
   const ch    = CHORDS[ci];
   // Clamp inversion if the new chord has fewer tones (e.g. switching 7th→triad).
   const safeInv = Math.min(inv, ch.ivls.length - 1);
@@ -197,7 +273,31 @@ function App(){
     if (i >= FREE_SCALES && !isPro){ setUpg(SCALES[i].name + ' scale'); track('paywall.shown',{feature:SCALES[i].name}); return; }
     setSi(i); track('scale.picked',{scale:SCALES[i].id});
   };
-  const doUnlock = () => { setLevel('pro'); setUpg(null); track('upgrade.completed',{feature:upg}); };
+  const doUnlock = async () => {
+    track('purchase.started',{feature:upg});
+    if (!IAP.native){ // web PWA has no store — grant locally so the browser build stays usable
+      setOwned('pro'); setUpg(null); track('upgrade.completed',{feature:upg,mode:'web'}); return;
+    }
+    setBusy(true);
+    const ok = await IAP.purchase();
+    setBusy(false);
+    if (ok){ setOwned('pro'); setUpg(null); track('upgrade.completed',{feature:upg}); }
+    else track('purchase.failed',{feature:upg});
+  };
+  const doStartTrial = () => {
+    const t = Date.now();
+    setTrialStart(t); setNow(t); setUpg(null);
+    track('trial.started',{feature:upg});
+  };
+  const doRestore = async () => {
+    track('restore.started');
+    if (!IAP.native){ track('restore.unavailable',{mode:'web'}); return; }
+    setBusy(true);
+    const ok = await IAP.restore();
+    setBusy(false);
+    if (ok){ setOwned('pro'); setUpg(null); track('restore.completed'); }
+    else track('restore.empty');
+  };
 
   const card = { background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:12, padding:14, marginBottom:14 };
 
@@ -206,11 +306,11 @@ function App(){
     e('header',{style:{display:'flex',alignItems:'center',gap:10,padding:'14px 0 10px'}},
       e('div',{style:{fontSize:'1.15rem',fontWeight:800,letterSpacing:'-.01em'}},'Piano Chords Lab'),
       e('div',{style:{flex:1}}),
-      e('button',{ onClick:()=>setLevel(isPro?'essentials':'pro'),
-        title:'Toggle Pro (dev)', style:{ padding:'5px 10px', borderRadius:20, cursor:'pointer',
+      e('button',{ onClick:()=>setOwned(owned==='pro'?'essentials':'pro'),
+        title:'Toggle owned Pro (dev)', style:{ padding:'5px 10px', borderRadius:20, cursor:'pointer',
           fontSize:'.72rem', fontWeight:700, border:'1px solid var(--border)',
           background: isPro?'var(--gold)':'transparent', color: isPro?'#07070f':'var(--hint)' } },
-        isPro ? 'Pro ✦' : 'Essentials'),
+        owned==='pro' ? 'Pro ✦' : (onTrial ? 'Trial · ' + trialDays + 'd' : 'Essentials')),
       e('button',{ onClick:()=>setTheme(theme==='dark'?'light':'dark'),
         style:{ padding:'5px 9px', borderRadius:20, cursor:'pointer', fontSize:'.85rem',
           border:'1px solid var(--border)', background:'transparent', color:'var(--txt)' } },
@@ -317,7 +417,8 @@ function App(){
         )
       ),
 
-    upg ? e(UpgradeSheet,{ feature:upg, onClose:()=>setUpg(null), onUnlock:doUnlock }) : null
+    upg ? e(UpgradeSheet,{ feature:upg, canTrial, busy,
+            onClose:()=>setUpg(null), onUnlock:doUnlock, onStartTrial:doStartTrial, onRestore:doRestore }) : null
   );
 }
 
