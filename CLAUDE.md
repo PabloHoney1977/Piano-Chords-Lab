@@ -44,16 +44,24 @@ A working **Build-a-Chord** core:
   (Major + Natural Minor free), rest Pro-gated. `playSeq()` plays the scale ascending.
 - Oscillator-based `pianoNote`/`playChord`/`playSeq`/`playMidi` audio (placeholder — port real samples).
 - Freemium gate: `FREE_TYPES = 4` (first 4 chord types free), rest open `UpgradeSheet`.
-- Header with dev Pro toggle + theme toggle. localStorage keys prefixed `pc-` (`pc-root`,
-  `pc-tab`, `pc-level`, `pc-theme`).
+- **IAP + 7-day trial** (`effectiveLevel` architecture): `owned` (purchased, `pc-level`) vs a
+  one-time 7-day trial (`pc-trial-start`); the UI gates on `effectiveLevel(owned,start,now)` =
+  max of the two. `IAP` module wraps RevenueCat's Capacitor plugin (entitlement `pro`, product
+  `pro_unlock`, key from `window.__REVENUECAT_KEY__`) — `configure/isEntitled/purchase/restore`,
+  all no-op on web. `UpgradeSheet` offers Unlock / Start trial / Restore; on web the Unlock path
+  grants locally so the PWA stays testable. Entitlements re-sync on launch; trial expiry re-checks
+  every 60s. **TODO before iOS: verify plugin response shapes vs installed `@revenuecat/purchases-capacitor`.**
+- Header with dev Pro toggle (toggles `owned`) + trial countdown + theme toggle. localStorage
+  keys prefixed `pc-` (`pc-root`, `pc-tab`, `pc-level`, `pc-trial-start`, `pc-theme`).
 - `PRICE` constant = single source of truth for the price string (learn from Jazz Guitar Lab,
   where `$9.99` was scattered across ~10 files and had to be swept).
 - `track()` PostHog helper + `__POSTHOG_KEY__` placeholder in `index.html` (no-ops until set).
 
 ## To Port From Jazz Guitar Lab (don't rebuild from scratch)
 - **Real instrument samples** + EQ chain → adapt `playGuitarNote` to piano samples.
-- **`IAP` module** (RevenueCat, entitlement `pro`, product `pro_unlock`) + 7-day trial
-  (`effectiveLevel` architecture) — copy near-verbatim; swap localStorage prefixes to `pc-`.
+- ✅ **`IAP` module** + 7-day trial (`effectiveLevel`) — *done; built from the architecture in
+  this doc (JGL repo wasn't accessible). Reconcile against JGL's actual `IAP`/RevenueCat wiring
+  when the iOS project is added.*
 - **Two-tier tour system** (`tourStepsFor`, overview + per-page contextual tours).
 - **Streak tracking** + milestones.
 - **Onboarding** first-run logic.
@@ -73,7 +81,7 @@ is the likely range — research before launch. Update only the `PRICE` constant
 ## Next Session Priorities
 1. ✅ Inversions + voicing display on the keyboard. *(done — `voicing()` + 3-octave literal keyboard)*
 2. ✅ Scales tab reusing the highlight engine. *(done — `SCALES` + Chords/Scales tabs, `FREE_SCALES=2`)*
-3. Port the `IAP` module + 7-day trial from Jazz Guitar Lab.
+3. ✅ Port the `IAP` module + 7-day trial from Jazz Guitar Lab. *(done — `IAP` + `effectiveLevel`, RevenueCat Capacitor wrapper, trial in `UpgradeSheet`)*
 4. App icons (192/512 for manifest + iOS set), Capacitor iOS project, `codemagic.yaml`.
 5. Pricing research → set `PRICE`.
 6. Smoke tests (Playwright, mirror Jazz Guitar Lab's `test/` harness).
