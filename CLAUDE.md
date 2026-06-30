@@ -32,13 +32,20 @@ Capacitor iOS + Codemagic CI to be added (mirror Jazz Guitar Lab's `ios/` + `cod
 ## What's Built (current `app.js`)
 A working **Build-a-Chord** core:
 - `NOTES`, `CHORDS` (16 types with semitone-interval formulas), `chordPCs/chordNotes/chordName` helpers.
-- `Keyboard` component: 2-octave clickable SVG piano; highlights root (red `--root`) and chord
-  tones (teal `--tone`) by pitch class across both octaves; `translateZ(0)` compositing hint
-  applied (iOS Safari filtered-SVG repaint gotcha — same as Jazz Guitar Lab's NeckSVG).
-- Oscillator-based `pianoNote`/`playChord`/`playMidi` audio (placeholder — port real samples).
+- `Keyboard` component: 3-octave clickable SVG piano; renders the **literal voicing** (actual
+  sounding MIDI notes) so inversions are visible — bass note red `--root`, upper tones teal
+  `--tone`; `translateZ(0)` compositing hint applied (iOS Safari filtered-SVG repaint gotcha —
+  same as Jazz Guitar Lab's NeckSVG).
+- **Inversions** (Pro): `voicing(root, ivls, inv)` raises the lowest `inv` tones an octave;
+  inversion picker is Pro-gated (root position free). Chord name shows slash-bass (e.g. `C/E`).
+  3 octaves (MIDI 60–95) fit every chord type in every inversion, incl. 9ths.
+- **Scales tab** (`SCALES`, 12 scales/modes): Chords/Scales tab switcher reuses the same
+  `Keyboard` (renders one ascending octave, root colored `--root`). `FREE_SCALES = 2`
+  (Major + Natural Minor free), rest Pro-gated. `playSeq()` plays the scale ascending.
+- Oscillator-based `pianoNote`/`playChord`/`playSeq`/`playMidi` audio (placeholder — port real samples).
 - Freemium gate: `FREE_TYPES = 4` (first 4 chord types free), rest open `UpgradeSheet`.
 - Header with dev Pro toggle + theme toggle. localStorage keys prefixed `pc-` (`pc-root`,
-  `pc-level`, `pc-theme`).
+  `pc-tab`, `pc-level`, `pc-theme`).
 - `PRICE` constant = single source of truth for the price string (learn from Jazz Guitar Lab,
   where `$9.99` was scattered across ~10 files and had to be swept).
 - `track()` PostHog helper + `__POSTHOG_KEY__` placeholder in `index.html` (no-ops until set).
@@ -52,8 +59,9 @@ A working **Build-a-Chord** core:
 - **Onboarding** first-run logic.
 
 ## Freemium Split
-- **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), all 12 roots, keyboard, audio.
-- **Pro:** all 16+ chord types, inversions (TODO), scales (TODO), reverse "find chord" (TODO),
+- **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root-position only,
+  Major + Natural Minor scales, all 12 roots, keyboard, audio.
+- **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse "find chord" (TODO),
   full theory reference. One-time IAP, **no subscription**.
 
 ## Pricing — TBD
@@ -63,8 +71,8 @@ chord/reference apps skew cheaper and more crowded than the jazz niche, so $4.99
 is the likely range — research before launch. Update only the `PRICE` constant.
 
 ## Next Session Priorities
-1. Inversions + voicing display on the keyboard.
-2. Scales tab reusing the highlight engine.
+1. ✅ Inversions + voicing display on the keyboard. *(done — `voicing()` + 3-octave literal keyboard)*
+2. ✅ Scales tab reusing the highlight engine. *(done — `SCALES` + Chords/Scales tabs, `FREE_SCALES=2`)*
 3. Port the `IAP` module + 7-day trial from Jazz Guitar Lab.
 4. App icons (192/512 for manifest + iOS set), Capacitor iOS project, `codemagic.yaml`.
 5. Pricing research → set `PRICE`.
