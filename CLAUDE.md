@@ -27,7 +27,11 @@ Sibling repos: `Jazz-Guitar-App` (live), `Note-Quest` (kids note-reading game, n
 Single-file React 18 PWA. CDN React (unpkg UMD), no bundler. All components, data, audio, and
 styles inline in `app.js` (`e()` = `React.createElement`). CSS theme vars in `index.html`
 (two `:root` blocks: dark default + `[data-theme="light"]`). Target: iPhone/iPad.
-Capacitor iOS + Codemagic CI to be added (mirror Jazz Guitar Lab's `ios/` + `codemagic.yaml`).
+Capacitor wraps it for iOS; `npm run build` assembles `www/` (the `webDir`), and
+`codemagic.yaml` generates the native `ios/` in CI (`cap add ios`), builds icons from
+`assets/` via `@capacitor/assets`, signs, and ships to TestFlight. Native `ios/` is NOT
+committed — CI regenerates it. Secrets (App Store Connect key, `REVENUECAT_IOS_KEY`) live
+in the Codemagic UI, injected into `www/index.html` at build time.
 
 ## What's Built (current `app.js`)
 A working **Build-a-Chord** core:
@@ -82,6 +86,9 @@ is the likely range — research before launch. Update only the `PRICE` constant
 1. ✅ Inversions + voicing display on the keyboard. *(done — `voicing()` + 3-octave literal keyboard)*
 2. ✅ Scales tab reusing the highlight engine. *(done — `SCALES` + Chords/Scales tabs, `FREE_SCALES=2`)*
 3. ✅ Port the `IAP` module + 7-day trial from Jazz Guitar Lab. *(done — `IAP` + `effectiveLevel`, RevenueCat Capacitor wrapper, trial in `UpgradeSheet`)*
-4. App icons (192/512 for manifest + iOS set), Capacitor iOS project, `codemagic.yaml`.
+4. ✅ App icons, Capacitor config, `codemagic.yaml`. *(done — `icons/` + `assets/` brand icon
+   (red-root/teal-tone keyboard), `capacitor.config.json`, Codemagic→TestFlight pipeline that
+   regenerates `ios/` in CI. **Pending: wire Apple Developer + RevenueCat credentials in the
+   Codemagic UI and run the first build.**)*
 5. Pricing research → set `PRICE`.
 6. Smoke tests (Playwright, mirror Jazz Guitar Lab's `test/` harness).

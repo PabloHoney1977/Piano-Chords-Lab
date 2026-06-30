@@ -1,0 +1,10 @@
+{
+  "appId": "com.pianochordslab.app",
+  "appName": "Piano Chords Lab",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0b0b14"
+  },
+  "backgroundColor": "#0b0b14"
+}
