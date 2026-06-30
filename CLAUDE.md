@@ -91,4 +91,5 @@ is the likely range — research before launch. Update only the `PRICE` constant
    regenerates `ios/` in CI. **Pending: wire Apple Developer + RevenueCat credentials in the
    Codemagic UI and run the first build.**)*
 5. Pricing research → set `PRICE`.
-6. Smoke tests (Playwright, mirror Jazz Guitar Lab's `test/` harness).
+6. ✅ Smoke tests (Playwright + `node --test`). *(done — `test/smoke.test.cjs` + `test/helpers.cjs`,
+   6 cases covering render/tabs/gating/trial; `npm test`. React mocked from devDeps, SW blocked.)*

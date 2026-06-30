@@ -13,6 +13,14 @@ python -m http.server 8000
 ```
 Live (GitHub Pages, served from `main`): https://pablohoney1977.github.io/Piano-Chords-Lab/
 
+## Tests
+Headless smoke tests (Playwright + node's test runner) exercise rendering, the Chords/Scales tabs, freemium gating, and the IAP 7-day trial against the real `index.html`:
+```
+npm ci      # installs react/react-dom/playwright (devDeps)
+npm test
+```
+React is mocked from the local devDependencies (no CDN needed) and the service worker is blocked so a cached shell can't hide a regression.
+
 ## Stack
 Single-file React 18 PWA (CDN React, no bundler). All components, data, audio, and styles live in `app.js` (`e()` = `React.createElement`). CSS theme variables in `index.html`. Capacitor wraps it for iOS; Codemagic builds and ships it to TestFlight.
 
@@ -37,7 +45,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [ ] "Find chord" reverse lookup (tap keys → name the chord)
 - [ ] Onboarding, contextual tours, streak tracking (port from Jazz Guitar Lab)
 - [ ] Pricing decision (currently `$9.99` placeholder in `app.js` `PRICE`)
-- [ ] Smoke tests (Playwright harness)
+- [x] Smoke tests (Playwright harness)
 
 ## Freemium split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root position only, Major + Natural Minor scales, all roots, keyboard, audio.
