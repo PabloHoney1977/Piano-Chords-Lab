@@ -68,8 +68,16 @@ async function launch() {
 }
 
 // Fresh context (clean localStorage) per call; mocks React; opens the app.
-async function openApp(browser, url) {
+// By default the onboarding overview + per-tab tips are pre-dismissed so they
+// don't overlay unrelated tests. Pass { onboarded:false } / { tips:false } to
+// exercise the tour flows.
+async function openApp(browser, url, opts = {}) {
+  const { onboarded = true, tips = true } = opts;
   const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const seed = [];
+  if (onboarded) seed.push("localStorage.setItem('pc-onboarded','1');");
+  if (tips) seed.push("['chords','scales','find'].forEach(t=>localStorage.setItem('pc-tip-'+t,'1'));");
+  if (seed.length) await ctx.addInitScript(`try{${seed.join('')}}catch(e){}`);
   const page = await ctx.newPage();
   await page.route('**/unpkg.com/react@**/react.production.min.js',
     (r) => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(REACT_UMD()) }));
