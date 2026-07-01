@@ -76,11 +76,18 @@ A working **Build-a-Chord** core:
 - **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse "find chord" (TODO),
   full theory reference. One-time IAP, **no subscription**.
 
-## Pricing — TBD
-`PRICE` in `app.js` is a **`$9.99` placeholder**. Decide via the same market-research lens used
-for Jazz Guitar Lab (which landed at $14.99 vs comps iReal Pro $21.99 / Tenuto $19.99). Piano
-chord/reference apps skew cheaper and more crowded than the jazz niche, so $4.99–$9.99 one-time
-is the likely range — research before launch. Update only the `PRICE` constant.
+## Pricing — set to $6.99 (revisit post-launch)
+`PRICE` in `app.js` is **`$6.99`** one-time Pro unlock (single source of truth — change only there).
+
+Rationale (market research, 2026): the piano chord/scale **reference** lane is crowded and
+price-anchored low — comps cluster at **$2.99–$4.99 one-time** (Piano Chords and Scales $4.99,
+Pensato $3.99, Tenuto $4.99), with freemium leaders (Piano Companion, 4.75★/22k+ reviews)
+dominating on trust and only outliers near ~$9. This is the opposite of Jazz Guitar Lab's niche
+(landed $14.99; jazz comps $20+). $9.99 (the old placeholder) was 2× the category anchor — too
+high for a new app with no review base. **$6.99** sits above the commodity $4.99 tier (signals
+"more polished than the cheap ones") but under the $9.99 wall, with the 7-day trial de-risking it.
+Levers if needed: **$4.99** = conservative/volume; **$9.99** = aggressive/premium. Cross-promotion
+from sibling apps lowers CAC and supports the slightly-above-anchor price.
 
 ## Next Session Priorities
 1. ✅ Inversions + voicing display on the keyboard. *(done — `voicing()` + 3-octave literal keyboard)*
@@ -90,6 +97,6 @@ is the likely range — research before launch. Update only the `PRICE` constant
    (red-root/teal-tone keyboard), `capacitor.config.json`, Codemagic→TestFlight pipeline that
    regenerates `ios/` in CI. **Pending: wire Apple Developer + RevenueCat credentials in the
    Codemagic UI and run the first build.**)*
-5. Pricing research → set `PRICE`.
+5. ✅ Pricing research → set `PRICE`. *(done — `$6.99` one-time; rationale in "Pricing" above.)*
 6. ✅ Smoke tests (Playwright + `node --test`). *(done — `test/smoke.test.cjs` + `test/helpers.cjs`,
    6 cases covering render/tabs/gating/trial; `npm test`. React mocked from devDeps, SW blocked.)*
