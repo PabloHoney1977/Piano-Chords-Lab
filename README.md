@@ -42,7 +42,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [x] App icon set, manifest icons, Capacitor config, `codemagic.yaml`
 - [ ] Wire iOS credentials (Apple Developer + RevenueCat) and run the first TestFlight build
 - [ ] Real piano samples (port the sample-loading approach from Jazz Guitar Lab)
-- [ ] "Find chord" reverse lookup (tap keys → name the chord)
+- [x] "Find chord" reverse lookup (tap keys → name the chord, bass-aware slash chords)
 - [ ] Onboarding, contextual tours, streak tracking (port from Jazz Guitar Lab)
 - [x] Pricing decision — `$6.99` one-time (`app.js` `PRICE`; rationale in `CLAUDE.md`)
 - [x] Smoke tests (Playwright harness)

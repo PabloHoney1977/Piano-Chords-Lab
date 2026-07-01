@@ -79,6 +79,32 @@ test('an expired trial re-locks Pro and is not offered again', async () => {
   });
 });
 
+test('Find tab is Pro-gated for free users', async () => {
+  await withApp(async (page) => {
+    await page.click('text=Find');
+    assert.ok(await page.$('text=Unlock Pro'), 'paywall shown when free user taps Find');
+    assert.ok(!(await page.$('text=Tap notes to identify a chord')), 'Find view not rendered');
+  });
+});
+
+test('Find: selecting C-E-G identifies a C major chord', async () => {
+  await withApp(async (page) => {
+    await page.click('header button:has-text("Essentials")'); // dev toggle → Pro
+    await page.click('text=Find');
+    await page.waitForSelector('text=Tap notes to identify a chord');
+    const whites = await page.$$('svg g');                    // white-key groups, C4=0 D=1 E=2 F=3 G=4
+    await whites[0].click(); await whites[2].click(); await whites[4].click();
+    await page.waitForTimeout(150);
+    // Primary result names C (root position, bass = C).
+    const result = await page.textContent('div[style*="2rem"]');
+    assert.match(result, /^C\b/, `expected a C chord, got "${result}"`);
+    // Clear resets to the prompt.
+    await page.click('text=Clear');
+    await page.waitForTimeout(100);
+    assert.ok(await page.$('text=Tap notes to identify a chord'), 'cleared back to prompt');
+  });
+});
+
 test('web Unlock grants Pro locally and persists', async () => {
   await withApp(async (page) => {
     await page.click('text=Scales');

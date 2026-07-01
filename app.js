@@ -68,6 +68,33 @@ function voicing(root, ivls, inv){
   return ms.sort((a,b) => a - b);
 }
 
+/* ── Reverse lookup: name the chord(s) that match a set of selected notes ──
+ * `pcs` = selected pitch classes (0–11); `bassPC` = pitch class of the lowest
+ * selected note (for slash / inversion naming). Returns every exact match across
+ * all 12 roots and the CHORDS table — symmetric chords (dim7/aug) and shared sets
+ * (C6 == Am7) intentionally yield several, disambiguated by the bass. Root-position
+ * matches (root == bass) rank first, then by fewest notes. */
+const TWO_NOTE = {1:'min 2nd',2:'maj 2nd',3:'min 3rd',4:'maj 3rd',5:'perfect 4th',
+  6:'tritone',7:'perfect 5th',8:'min 6th',9:'maj 6th',10:'min 7th',11:'maj 7th'};
+function identifyChord(pcs, bassPC){
+  const set = new Set(pcs);
+  const out = [];
+  for (let root = 0; root < 12; root++){
+    for (const ch of CHORDS){
+      const chSet = new Set(ch.ivls.map(i => (root + i) % 12));
+      if (chSet.size !== set.size) continue;
+      let ok = true; set.forEach(pc => { if (!chSet.has(pc)) ok = false; });
+      if (!ok) continue;
+      const slash = bassPC != null && bassPC !== root;
+      out.push({ root, ch, slash,
+        name: NOTES[root] + ch.sym + (slash ? '/' + NOTES[bassPC] : '') });
+    }
+  }
+  out.sort((a,b) =>
+    (a.slash - b.slash) || (a.ch.ivls.length - b.ch.ivls.length) || (a.root - b.root));
+  return out;
+}
+
 /* ── Audio (simple oscillator piano — port real samples from Jazz Guitar Lab later) ── */
 let _actx;
 const ctx = () => (_actx = _actx || new (window.AudioContext || window.webkitAudioContext)());
@@ -149,7 +176,9 @@ const IAP = {
 /* ── Interactive keyboard (3 octaves from C4) ──
  * Renders the literal voicing (actual sounding notes), so inversions are visible:
  * the bass note is colored --root, the upper chord tones --tone. */
-function Keyboard({ voicing, bassMidi }){
+function Keyboard({ voicing, bassMidi, onKey }){
+  // onKey(midi): when provided (Find mode), a tap also toggles selection.
+  const tap = (midi) => { playMidi(midi); if (onKey) onKey(midi); };
   const OCT = 3, W = 32, H = 168, BW = 21, BH = 104, START = 60;
   const whites = [];
   for (let o = 0; o < OCT; o++) for (let wi = 0; wi < 7; wi++){
@@ -171,7 +200,7 @@ function Keyboard({ voicing, bassMidi }){
   return e('svg', { viewBox:`0 0 ${totalW} ${H}`, width:'100%',
       style:{ display:'block', maxWidth:totalW, margin:'4px auto 0',
               transform:'translateZ(0)', WebkitTransform:'translateZ(0)' } },
-    whites.map((k,i) => e('g', { key:'w'+i, onClick:()=>playMidi(k.midi), style:{cursor:'pointer'} },
+    whites.map((k,i) => e('g', { key:'w'+i, onClick:()=>tap(k.midi), style:{cursor:'pointer'} },
       e('rect', { x:k.x+1, y:0, width:W-2, height:H, rx:4,
         fill:fill(k.midi,false), stroke:'var(--border)', strokeWidth:1 }),
       on.has(k.midi)
@@ -180,7 +209,7 @@ function Keyboard({ voicing, bassMidi }){
         : null
     )),
     blacks.map((k,i) => e('rect', { key:'b'+i, x:k.x, y:0, width:BW, height:BH, rx:3,
-      onClick:()=>playMidi(k.midi),
+      onClick:()=>tap(k.midi),
       fill:fill(k.midi,true), stroke:'var(--border)', strokeWidth:1, style:{cursor:'pointer'} }))
   );
 }
@@ -232,6 +261,7 @@ function App(){
   const [busy, setBusy]   = React.useState(false);                  // IAP call in flight
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
+  const [sel, setSel]     = React.useState([]);                      // Find: selected MIDI notes
 
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
@@ -250,6 +280,8 @@ function App(){
   const onTrial     = owned !== 'pro' && msLeft > 0;
   const trialDays   = Math.ceil(msLeft / DAY_MS);
   const canTrial    = !trialStart;                                   // never started = eligible
+  // Find is Pro; if a saved pc-tab='find' loads without Pro, fall back to Chords.
+  const activeTab   = (tab === 'find' && !isPro) ? 'chords' : tab;
   const ch    = CHORDS[ci];
   // Clamp inversion if the new chord has fewer tones (e.g. switching 7th→triad).
   const safeInv = Math.min(inv, ch.ivls.length - 1);
@@ -259,6 +291,12 @@ function App(){
   // Scale: render one ascending octave (root → octave), root colored as the "bass".
   const sc         = SCALES[si];
   const scaleMidis = [...sc.ivls.map(i => 60 + root + i), 60 + root + 12];
+
+  // Find: derive pitch classes + bass from the selected notes, then name matches.
+  const selSorted = [...sel].sort((a,b) => a - b);
+  const selPCs    = [...new Set(selSorted.map(m => m % 12))];
+  const selBassPC = selSorted.length ? selSorted[0] % 12 : null;
+  const matches   = selPCs.length >= 3 ? identifyChord(selPCs, selBassPC) : [];
 
   const pickType = (i) => {
     if (i >= FREE_TYPES && !isPro){ setUpg(CHORDS[i].name); track('paywall.shown',{feature:CHORDS[i].name}); return; }
@@ -273,6 +311,12 @@ function App(){
     if (i >= FREE_SCALES && !isPro){ setUpg(SCALES[i].name + ' scale'); track('paywall.shown',{feature:SCALES[i].name}); return; }
     setSi(i); track('scale.picked',{scale:SCALES[i].id});
   };
+  const pickTab = (t) => {
+    if (t === 'find' && !isPro){ setUpg('Find Chord'); track('paywall.shown',{feature:'Find Chord'}); return; }
+    setTab(t); track('tab.switched',{tab:t});
+  };
+  const toggleKey = (midi) => setSel(s => s.includes(midi) ? s.filter(m => m !== midi) : [...s, midi]);
+  const clearSel  = () => setSel([]);
   const doUnlock = async () => {
     track('purchase.started',{feature:upg});
     if (!IAP.native){ // web PWA has no store — grant locally so the browser build stays usable
@@ -319,14 +363,49 @@ function App(){
 
     /* Tabs */
     e('div',{style:{display:'flex',gap:6,marginBottom:14}},
-      ['chords','scales'].map(t => e('button',{ key:t, onClick:()=>{ setTab(t); track('tab.switched',{tab:t}); },
-        style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
-          border:'1px solid var(--border)',
-          background: tab===t?'var(--accent)':'var(--bg2)',
-          color: tab===t?'#07070f':'var(--txt)' } }, t==='chords' ? 'Chords' : 'Scales'))
+      [['chords','Chords'],['scales','Scales'],['find','Find']].map(([t,label]) =>
+        e('button',{ key:t, onClick:()=>pickTab(t),
+          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
+            border:'1px solid var(--border)',
+            background: activeTab===t?'var(--accent)':'var(--bg2)',
+            color: activeTab===t?'#07070f':'var(--txt)' } },
+          label, (t==='find' && !isPro) ? ' 🔒' : ''))
     ),
 
-    tab==='chords'
+    activeTab==='find'
+    ? e(React.Fragment,{key:'find'},
+        /* Result card */
+        e('div',{style:{...card, textAlign:'center'}},
+          matches.length
+            ? e(React.Fragment,null,
+                e('div',{style:{fontSize:'2rem',fontWeight:800}}, matches[0].name),
+                matches.length > 1
+                  ? e('div',{style:{fontSize:'.82rem',color:'var(--hint)',marginTop:6}},
+                      'also: ' + matches.slice(1,4).map(m=>m.name).join(' · '))
+                  : null)
+            : e('div',{style:{fontSize:'1.05rem',fontWeight:700,color:'var(--hint)',padding:'6px 0'}},
+                selPCs.length === 0 ? 'Tap notes to identify a chord'
+                : selPCs.length === 2 ? (TWO_NOTE[((selPCs[1]-selPCs[0])%12+12)%12] || 'interval') + ' (need 3+ notes)'
+                : selPCs.length < 3 ? 'Add more notes…'
+                : 'No exact match — try different notes'),
+          selPCs.length
+            ? e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:8}},
+                selSorted.map(m=>NOTES[m%12]).join(' · '))
+            : null,
+          e('div',{style:{display:'flex',gap:8,justifyContent:'center',marginTop:14}},
+            e('button',{ onClick:()=>{ if(selSorted.length) playChord(selSorted); track('find.play',{n:selSorted.length}); },
+              style:{ padding:'9px 18px', borderRadius:8, cursor:'pointer', fontWeight:700,
+                background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play'),
+            e('button',{ onClick:clearSel,
+              style:{ padding:'9px 18px', borderRadius:8, cursor:'pointer', fontWeight:700,
+                background:'transparent', border:'1px solid var(--border)', color:'var(--txt)' } }, 'Clear'))
+        ),
+        /* Selectable keyboard */
+        e('div',{style:card}, e(Keyboard,{ voicing:selSorted, bassMidi:selSorted[0], onKey:toggleKey })),
+        e('div',{style:{fontSize:'.75rem',color:'var(--hint)',textAlign:'center',paddingBottom:30}},
+          'Tap keys to build a chord — the lowest note (red) is read as the bass for slash chords.')
+      )
+    : activeTab==='chords'
     ? e(React.Fragment,{key:'chords'},
         /* Chord name + notes */
         e('div',{style:{...card, textAlign:'center'}},
@@ -371,17 +450,21 @@ function App(){
         e('div',{style:card}, e(Keyboard,{ voicing:scaleMidis, bassMidi:60+root }))
       ),
 
-    /* Root picker (shared) */
-    e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
-    e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},
-      NOTES.map((n,i)=>e('button',{ key:n, onClick:()=>setRoot(i),
-        style:{ padding:'10px 0', borderRadius:8, cursor:'pointer', fontWeight:700,
-          border:'1px solid var(--border)',
-          background: i===root?'var(--accent)':'var(--bg2)',
-          color: i===root?'#07070f':'var(--txt)' } }, n))
-    ),
+    /* Root picker (shared by Chords + Scales; not used in Find) */
+    activeTab!=='find'
+    ? e(React.Fragment,{key:'rootpick'},
+        e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
+        e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},
+          NOTES.map((n,i)=>e('button',{ key:n, onClick:()=>setRoot(i),
+            style:{ padding:'10px 0', borderRadius:8, cursor:'pointer', fontWeight:700,
+              border:'1px solid var(--border)',
+              background: i===root?'var(--accent)':'var(--bg2)',
+              color: i===root?'#07070f':'var(--txt)' } }, n))
+        )
+      )
+    : null,
 
-    tab==='chords'
+    activeTab==='chords'
     ? e(React.Fragment,{key:'ctypes'},
         /* Chord type picker */
         e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'CHORD TYPE'),
@@ -399,7 +482,8 @@ function App(){
           })
         )
       )
-    : e(React.Fragment,{key:'stypes'},
+    : activeTab==='scales'
+    ? e(React.Fragment,{key:'stypes'},
         /* Scale picker */
         e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'SCALE'),
         e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,paddingBottom:30}},
@@ -415,7 +499,8 @@ function App(){
               locked ? e('span',{style:{fontSize:'.8rem'}},'🔒') : null);
           })
         )
-      ),
+      )
+    : null,
 
     upg ? e(UpgradeSheet,{ feature:upg, canTrial, busy,
             onClose:()=>setUpg(null), onUnlock:doUnlock, onStartTrial:doStartTrial, onRestore:doRestore }) : null
