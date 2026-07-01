@@ -83,7 +83,7 @@ test('web Unlock grants Pro locally and persists', async () => {
   await withApp(async (page) => {
     await page.click('text=Scales');
     await page.click('text=Dorian');
-    await page.click('text=Unlock Pro — $9.99');
+    await page.click('button:has-text("Unlock Pro —")'); // price-agnostic (PRICE constant)
     await page.waitForTimeout(150);
     assert.strictEqual(await headerLabel(page), 'Pro ✦');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('pc-level')), 'pro');

@@ -6,7 +6,7 @@
 const e = React.createElement;
 
 /* ── Single source of truth for price (don't scatter literals like the jazz app did) ── */
-const PRICE = '$9.99'; // TBD — see CLAUDE.md pricing note. Change here only.
+const PRICE = '$6.99'; // one-time Pro unlock; single source of truth. See CLAUDE.md pricing note.
 
 /* ── Music theory core (portable to any keyboard-based app) ── */
 const NOTES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];

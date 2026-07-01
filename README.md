@@ -44,7 +44,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [ ] Real piano samples (port the sample-loading approach from Jazz Guitar Lab)
 - [ ] "Find chord" reverse lookup (tap keys → name the chord)
 - [ ] Onboarding, contextual tours, streak tracking (port from Jazz Guitar Lab)
-- [ ] Pricing decision (currently `$9.99` placeholder in `app.js` `PRICE`)
+- [x] Pricing decision — `$6.99` one-time (`app.js` `PRICE`; rationale in `CLAUDE.md`)
 - [x] Smoke tests (Playwright harness)
 
 ## Freemium split
