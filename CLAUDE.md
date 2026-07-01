@@ -46,6 +46,11 @@ A working **Build-a-Chord** core:
 - **Scales tab** (`SCALES`, 12 scales/modes): Chords/Scales tab switcher reuses the same
   `Keyboard` (renders one ascending octave, root colored `--root`). `FREE_SCALES = 2`
   (Major + Natural Minor free), rest Pro-gated. `playSeq()` plays the scale ascending.
+- **Find tab** (Pro): reverse lookup — tap keys (`Keyboard` `onKey` selection mode) and
+  `identifyChord(pcs, bassPC)` names every exact match across all 12 roots × `CHORDS`,
+  bass-aware for slash chords (C-E-G-A over C → `C6`, also `Am7/C`). Root-position matches
+  rank first. Tab is Pro-gated at entry (`activeTab` falls back to Chords if a saved
+  `pc-tab='find'` loads without Pro). 2-note selections show the interval name.
 - Oscillator-based `pianoNote`/`playChord`/`playSeq`/`playMidi` audio (placeholder — port real samples).
 - Freemium gate: `FREE_TYPES = 4` (first 4 chord types free), rest open `UpgradeSheet`.
 - **IAP + 7-day trial** (`effectiveLevel` architecture): `owned` (purchased, `pc-level`) vs a
@@ -73,7 +78,7 @@ A working **Build-a-Chord** core:
 ## Freemium Split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root-position only,
   Major + Natural Minor scales, all 12 roots, keyboard, audio.
-- **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse "find chord" (TODO),
+- **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse "find chord",
   full theory reference. One-time IAP, **no subscription**.
 
 ## Pricing — set to $6.99 (revisit post-launch)
