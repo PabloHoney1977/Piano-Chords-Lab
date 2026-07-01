@@ -60,8 +60,12 @@ A working **Build-a-Chord** core:
   all no-op on web. `UpgradeSheet` offers Unlock / Start trial / Restore; on web the Unlock path
   grants locally so the PWA stays testable. Entitlements re-sync on launch; trial expiry re-checks
   every 60s. **TODO before iOS: verify plugin response shapes vs installed `@revenuecat/purchases-capacitor`.**
-- Header with dev Pro toggle (toggles `owned`) + trial countdown + theme toggle. localStorage
-  keys prefixed `pc-` (`pc-root`, `pc-tab`, `pc-level`, `pc-trial-start`, `pc-theme`).
+- **Onboarding + two-tier tour** (`tourStepsFor(key)` + `Tour` carousel): first run shows the
+  `overview` tour once (`pc-onboarded`); the header `?` reopens it; first visit to each tab shows
+  a one-time contextual tip (`pc-tip-<tab>`). All dismissible; no tab-driving to avoid gating edges.
+- Header with dev Pro toggle (toggles `owned`) + trial countdown + `?` tour + theme toggle.
+  localStorage keys prefixed `pc-` (`pc-root`, `pc-tab`, `pc-level`, `pc-trial-start`, `pc-theme`,
+  `pc-onboarded`, `pc-tip-*`).
 - `PRICE` constant = single source of truth for the price string (learn from Jazz Guitar Lab,
   where `$9.99` was scattered across ~10 files and had to be swept).
 - `track()` PostHog helper + `__POSTHOG_KEY__` placeholder in `index.html` (no-ops until set).
@@ -71,9 +75,9 @@ A working **Build-a-Chord** core:
 - ✅ **`IAP` module** + 7-day trial (`effectiveLevel`) — *done; built from the architecture in
   this doc (JGL repo wasn't accessible). Reconcile against JGL's actual `IAP`/RevenueCat wiring
   when the iOS project is added.*
-- **Two-tier tour system** (`tourStepsFor`, overview + per-page contextual tours).
+- ✅ **Two-tier tour system** (`tourStepsFor`, overview + per-page contextual tours) — *done.*
+- ✅ **Onboarding** first-run logic — *done (overview tour on first run, `pc-onboarded`).*
 - **Streak tracking** + milestones.
-- **Onboarding** first-run logic.
 
 ## Freemium Split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root-position only,

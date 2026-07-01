@@ -13,8 +13,8 @@ before(async () => { server = await startServer(); url = server.url; browser = a
 after(async () => { if (browser) await browser.close(); if (server) await server.close(); });
 
 // Convenience: open a clean app, run fn, always tear the context down.
-async function withApp(fn) {
-  const page = await openApp(browser, url);
+async function withApp(fn, opts) {
+  const page = await openApp(browser, url, opts);
   try { await fn(page); assert.deepStrictEqual(page.__errors, [], 'no console/page errors'); }
   finally { await page.context().close(); }
 }
@@ -103,6 +103,34 @@ test('Find: selecting C-E-G identifies a C major chord', async () => {
     await page.waitForTimeout(100);
     assert.ok(await page.$('text=Tap notes to identify a chord'), 'cleared back to prompt');
   });
+});
+
+test('first run shows the overview tour and marks onboarded', async () => {
+  await withApp(async (page) => {
+    assert.ok(await page.$('text=Welcome to Piano Chords Lab'), 'overview tour shown on first run');
+    await page.click('text=Skip');
+    await page.waitForTimeout(100);
+    assert.ok(!(await page.$('text=Welcome to Piano Chords Lab')), 'tour dismissed');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('pc-onboarded')), '1');
+  }, { onboarded: false, tips: false });
+});
+
+test('? button reopens the overview tour', async () => {
+  await withApp(async (page) => {
+    assert.ok(!(await page.$('text=Welcome to Piano Chords Lab')), 'no tour when already onboarded');
+    await page.click('header button:has-text("?")');
+    assert.ok(await page.$('text=Welcome to Piano Chords Lab'), 'tour reopened from ? button');
+  });
+});
+
+test('per-tab contextual tip shows once on first visit', async () => {
+  await withApp(async (page) => {
+    await page.click('text=Scales');
+    assert.ok(await page.$('text=Explore scales'), 'scales tip shown on first visit');
+    await page.click('text=Done');
+    await page.waitForTimeout(100);
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('pc-tip-scales')), '1');
+  }, { onboarded: true, tips: false });
 });
 
 test('web Unlock grants Pro locally and persists', async () => {

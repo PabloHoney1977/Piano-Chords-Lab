@@ -248,6 +248,59 @@ function UpgradeSheet({ feature, canTrial, busy, onClose, onUnlock, onStartTrial
   );
 }
 
+/* ── Two-tier tour (overview on first run / from the ? button; per-tab contextual tips) ──
+ * `tourStepsFor(key)` returns the steps for a tour; `key` is 'overview' or a tab id. */
+function tourStepsFor(key){
+  switch (key){
+    case 'overview': return [
+      { title:'Welcome to Piano Chords Lab', body:'An interactive reference for piano chords, scales and theory. Here’s a 20-second tour — tap Next.' },
+      { title:'Chords', body:'Pick any root and chord type to see it light up across the keyboard and hear it. The first four types are free.' },
+      { title:'Scales', body:'The Scales tab shows 12 scales and modes on the same keyboard, played back ascending.' },
+      { title:'Find a chord', body:'Stuck on a voicing? The Find tab names any chord you tap in — it even reads the bass note for slash chords.' },
+      { title:'Free → Pro', body:'Inversions, all scales, and Find are Pro. Start a one-time 7-day free trial anytime from the upgrade sheet — no subscription.' },
+    ];
+    case 'chords': return [
+      { title:'Build a chord', body:'Choose a root and a chord type below; the keyboard shows the actual voicing. Tap ▶ Play to hear it.' },
+      { title:'Inversions (Pro)', body:'Use the inversion buttons to lift the bass an octave — the name updates with the slash bass, e.g. C/E.' },
+    ];
+    case 'scales': return [
+      { title:'Explore scales', body:'Pick a root and a scale; tap ▶ Play scale to hear it ascend. Major and Natural Minor are free.' },
+    ];
+    case 'find': return [
+      { title:'Find a chord', body:'Tap notes on the keyboard and we’ll name the chord. The lowest note (red) is read as the bass, so inversions and slash chords are named too. Tap Clear to start over.' },
+    ];
+    default: return [];
+  }
+}
+
+function Tour({ steps, onClose }){
+  const [i, setI] = React.useState(0);
+  const step = steps[i];
+  if (!step) return null;
+  const last = i === steps.length - 1;
+  const btn = { flex:1, padding:12, borderRadius:10, cursor:'pointer', fontWeight:700, fontSize:'.95rem' };
+  const ghost = { ...btn, background:'transparent', border:'1px solid var(--border)', color:'var(--hint)' };
+  const primary = { ...btn, background:'var(--accent)', border:'none', color:'#07070f' };
+  return e('div', { onClick:onClose, style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)',
+      display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:20 } },
+    e('div', { onClick:ev=>ev.stopPropagation(), style:{ width:'100%', maxWidth:420, background:'var(--bg2)',
+        border:'1px solid var(--border)', borderRadius:16, padding:'22px 20px 18px' } },
+      e('div',{style:{fontSize:'1.15rem',fontWeight:800,marginBottom:8}}, step.title),
+      e('div',{style:{fontSize:'.95rem',color:'var(--hint)',lineHeight:1.55,minHeight:72}}, step.body),
+      steps.length > 1
+        ? e('div',{style:{display:'flex',gap:5,justifyContent:'center',margin:'14px 0 16px'}},
+            steps.map((_,d)=>e('div',{key:d,style:{width:7,height:7,borderRadius:4,
+              background: d===i?'var(--accent)':'var(--border)'}})))
+        : e('div',{style:{height:16}}),
+      e('div',{style:{display:'flex',gap:8}},
+        i>0 ? e('button',{ onClick:()=>setI(i-1), style:ghost }, 'Back')
+            : e('button',{ onClick:onClose, style:ghost }, 'Skip'),
+        e('button',{ onClick:()=> last ? onClose() : setI(i+1), style:primary }, last ? 'Done' : 'Next')
+      )
+    )
+  );
+}
+
 /* ── App ── */
 function App(){
   const [root, setRoot]   = React.useState(() => +(localStorage.getItem('pc-root') ?? 0));
@@ -262,6 +315,7 @@ function App(){
   const [theme, setTheme] = React.useState(() => localStorage.getItem('pc-theme') || 'dark');
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
   const [sel, setSel]     = React.useState([]);                      // Find: selected MIDI notes
+  const [tour, setTour]   = React.useState(null);                    // { key, steps } or null
 
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
@@ -269,6 +323,10 @@ function App(){
   React.useEffect(()=>{ localStorage.setItem('pc-level', owned); },[owned]);
   React.useEffect(()=>{ if (trialStart) localStorage.setItem('pc-trial-start', trialStart); },[trialStart]);
   React.useEffect(()=>{ track('app.loaded'); },[]);
+  // First run: show the overview tour once (marked done on close).
+  React.useEffect(()=>{
+    if (!localStorage.getItem('pc-onboarded')) setTour({ key:'overview', steps:tourStepsFor('overview') });
+  },[]);
   // Sync real RevenueCat entitlements on launch (no-op on web).
   React.useEffect(()=>{ (async()=>{ await IAP.configure(); if (await IAP.isEntitled()) setOwned('pro'); })(); },[]);
   // Re-check trial expiry once a minute so Pro features lock the moment it lapses.
@@ -311,9 +369,23 @@ function App(){
     if (i >= FREE_SCALES && !isPro){ setUpg(SCALES[i].name + ' scale'); track('paywall.shown',{feature:SCALES[i].name}); return; }
     setSi(i); track('scale.picked',{scale:SCALES[i].id});
   };
+  const startTour = (key) => { const steps = tourStepsFor(key); if (steps.length) setTour({ key, steps }); track('tour.opened',{key}); };
+  const closeTour = () => {
+    if (tour){
+      if (tour.key === 'overview') localStorage.setItem('pc-onboarded','1');
+      else localStorage.setItem('pc-tip-'+tour.key, '1');
+      track('tour.closed',{key:tour.key});
+    }
+    setTour(null);
+  };
   const pickTab = (t) => {
     if (t === 'find' && !isPro){ setUpg('Find Chord'); track('paywall.shown',{feature:'Find Chord'}); return; }
     setTab(t); track('tab.switched',{tab:t});
+    // Per-tab contextual tip, shown once, only after onboarding and when nothing else is open.
+    if (localStorage.getItem('pc-onboarded') && !localStorage.getItem('pc-tip-'+t) && !tour && !upg){
+      const steps = tourStepsFor(t);
+      if (steps.length) setTour({ key:t, steps });
+    }
   };
   const toggleKey = (midi) => setSel(s => s.includes(midi) ? s.filter(m => m !== midi) : [...s, midi]);
   const clearSel  = () => setSel([]);
@@ -355,6 +427,9 @@ function App(){
           fontSize:'.72rem', fontWeight:700, border:'1px solid var(--border)',
           background: isPro?'var(--gold)':'transparent', color: isPro?'#07070f':'var(--hint)' } },
         owned==='pro' ? 'Pro ✦' : (onTrial ? 'Trial · ' + trialDays + 'd' : 'Essentials')),
+      e('button',{ onClick:()=>startTour('overview'), title:'Take the tour',
+        style:{ padding:'5px 9px', borderRadius:20, cursor:'pointer', fontSize:'.85rem', fontWeight:700,
+          border:'1px solid var(--border)', background:'transparent', color:'var(--txt)' } }, '?'),
       e('button',{ onClick:()=>setTheme(theme==='dark'?'light':'dark'),
         style:{ padding:'5px 9px', borderRadius:20, cursor:'pointer', fontSize:'.85rem',
           border:'1px solid var(--border)', background:'transparent', color:'var(--txt)' } },
@@ -503,7 +578,9 @@ function App(){
     : null,
 
     upg ? e(UpgradeSheet,{ feature:upg, canTrial, busy,
-            onClose:()=>setUpg(null), onUnlock:doUnlock, onStartTrial:doStartTrial, onRestore:doRestore }) : null
+            onClose:()=>setUpg(null), onUnlock:doUnlock, onStartTrial:doStartTrial, onRestore:doRestore }) : null,
+
+    tour ? e(Tour,{ steps:tour.steps, onClose:closeTour }) : null
   );
 }
 
