@@ -35,7 +35,8 @@ in the Codemagic UI, injected into `www/index.html` at build time.
 
 ## What's Built (current `app.js`)
 A working **Build-a-Chord** core:
-- `NOTES`, `CHORDS` (16 types with semitone-interval formulas), `chordPCs/chordNotes/chordName` helpers.
+- `NOTES`, `CHORDS` (27 types with semitone-interval formulas — triads through 13ths/altered
+  dominants), `chordPCs/chordNotes/chordName` helpers.
 - `Keyboard` component: 3-octave clickable SVG piano; renders the **literal voicing** (actual
   sounding MIDI notes) so inversions are visible — bass note red `--root`, upper tones teal
   `--tone`; `translateZ(0)` compositing hint applied (iOS Safari filtered-SVG repaint gotcha —
@@ -43,7 +44,7 @@ A working **Build-a-Chord** core:
 - **Inversions** (Pro): `voicing(root, ivls, inv)` raises the lowest `inv` tones an octave;
   inversion picker is Pro-gated (root position free). Chord name shows slash-bass (e.g. `C/E`).
   3 octaves (MIDI 60–95) fit every chord type in every inversion, incl. 9ths.
-- **Scales tab** (`SCALES`, 12 scales/modes): Chords/Scales tab switcher reuses the same
+- **Scales tab** (`SCALES`, 20 scales/modes): Chords/Scales tab switcher reuses the same
   `Keyboard` (renders one ascending octave, root colored `--root`). `FREE_SCALES = 2`
   (Major + Natural Minor free), rest Pro-gated. `playSeq()` plays the scale ascending.
 - **Find tab** (Pro): reverse lookup — tap keys (`Keyboard` `onKey` selection mode) and
@@ -90,8 +91,8 @@ A working **Build-a-Chord** core:
 ## Freemium Split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root-position only,
   Major + Natural Minor scales, all 12 roots, keyboard, audio.
-- **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse "find chord",
-  full theory reference. One-time IAP, **no subscription**.
+- **Pro:** all 27 chord types, all inversions, all 20 scales/modes, reverse "find chord",
+  circle of fifths + chords-in-key, full theory reference. One-time IAP, **no subscription**.
 
 ## Pricing — set to $6.99 (revisit post-launch)
 `PRICE` in `app.js` is **`$6.99`** one-time Pro unlock (single source of truth — change only there).
