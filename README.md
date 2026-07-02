@@ -3,7 +3,7 @@
 Interactive **piano chord, scale & theory reference** — a freemium iOS PWA. Pick a root and chord type, see it light up across an interactive keyboard, hear it, and learn the theory. The piano-market sibling of [Jazz Guitar Lab](https://github.com/PabloHoney1977/Jazz-Guitar-App).
 
 ## Status
-🚧 **Pre-launch.** The core product is built: 27 chord types with **inversions** (literal-voicing 3-octave keyboard), a **Scales tab** (20 scales/modes), a reverse **Find Chord** tab, a **Keys** tab (circle of fifths + chords-in-key), all 12 roots, an additive-synth piano, onboarding + tours, dark/light theme, the freemium gate, and **RevenueCat IAP + a 7-day trial** (`effectiveLevel` architecture). App icons, the Capacitor config, and the Codemagic iOS pipeline are in place — the remaining launch work is wiring credentials and porting real piano samples. See "Roadmap" and `CLAUDE.md`.
+🚧 **Pre-launch.** The core product is built: 27 chord types with **inversions** (literal-voicing 3-octave keyboard), a **Scales tab** (20 scales/modes), a reverse **Find Chord** tab, a **Keys** tab (circle of fifths + chords-in-key), an **Ear** trainer (ported from Jazz Guitar Lab), all 12 roots, an additive-synth piano, onboarding + tours, dark/light theme, the freemium gate, and **RevenueCat IAP + a 7-day trial** (`effectiveLevel` architecture). App icons, the Capacitor config, and the Codemagic iOS pipeline are in place — the remaining launch work is wiring credentials and porting real piano samples. See "Roadmap" and `CLAUDE.md`.
 
 ## Run locally
 No build step. Serve the folder over http (service worker needs http, not `file://`):
@@ -45,6 +45,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [x] "Find chord" reverse lookup (tap keys → name the chord, bass-aware slash chords)
 - [x] Keys tab: interactive circle of fifths + "chords in this key" (diatonic triads with Roman numerals)
 - [x] Onboarding + two-tier tour (overview on first run / `?` button; per-tab contextual tips)
+- [x] Ear training (ported from Jazz Guitar Lab): 4 modes, difficulty tiers, spaced repetition, auto/TTS
 - [ ] Streak tracking + milestones (port from Jazz Guitar Lab)
 - [x] Pricing decision — `$6.99` one-time (`app.js` `PRICE`; rationale in `CLAUDE.md`)
 - [x] Smoke tests (Playwright harness)

@@ -162,6 +162,34 @@ test('Keys: circle of fifths + diatonic chords for the selected key', async () =
   });
 });
 
+test('Ear tab is Pro-gated for free users', async () => {
+  await withApp(async (page) => {
+    await page.click('text=Ear');
+    assert.ok(await page.$('text=Unlock Pro'), 'paywall shown when free user taps Ear');
+    assert.ok(!(await page.$('text=Start Training')), 'ear intro not rendered');
+  });
+});
+
+test('Ear training: intro → answer → reveal (Pro)', async () => {
+  await withApp(async (page) => {
+    await page.click('header button:has-text("Essentials")'); // dev toggle → Pro
+    await page.click('text=Ear');
+    await page.click('text=Start Training');                   // dismiss intro gate
+    // All four Pro modes are available.
+    for (const m of ['Intervals','Triads','7ths','Progressions'])
+      assert.ok(await page.$(`button:has-text("${m}")`), `mode tab ${m}`);
+    await page.waitForSelector('text=Song reference hints');   // intervals default
+    // Answer the interval question — tier 1 pool always includes Perfect 5th.
+    await page.click('button:has-text("Perfect 5th")');
+    await page.waitForTimeout(150);
+    const reveal = await page.textContent('body');
+    assert.ok(/Correct!|That was/.test(reveal), 'answer reveals feedback');
+    // Switching mode updates the prompt.
+    await page.click('button:has-text("Triads")');
+    await page.waitForSelector('text=Three-note chord');
+  });
+});
+
 test('audio: pianoNote renders an audible, decaying, non-clipping tone', async () => {
   await withApp(async (page) => {
     // app.js is a classic script, so its synth functions are globals — render the
