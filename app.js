@@ -95,6 +95,37 @@ function identifyChord(pcs, bassPC){
   return out;
 }
 
+/* ── Circle of fifths + diatonic chords ("chords in this key") ──
+ * CO5 is the wheel in fifths order (clockwise from C): each entry has the major key,
+ * its relative minor, its tonic pitch class, and its key signature. `keyInfoFor(pc)`
+ * finds the entry for a root; `diatonicTriads(pc)` returns the seven triads built on a
+ * major scale, with Roman numerals and playable MIDI. */
+const CO5 = [
+  { maj:'C',  min:'Am',  pc:0,  sig:'0'  },
+  { maj:'G',  min:'Em',  pc:7,  sig:'1♯' },
+  { maj:'D',  min:'Bm',  pc:2,  sig:'2♯' },
+  { maj:'A',  min:'F♯m', pc:9,  sig:'3♯' },
+  { maj:'E',  min:'C♯m', pc:4,  sig:'4♯' },
+  { maj:'B',  min:'G♯m', pc:11, sig:'5♯' },
+  { maj:'G♭', min:'E♭m', pc:6,  sig:'6♭' },
+  { maj:'D♭', min:'B♭m', pc:1,  sig:'5♭' },
+  { maj:'A♭', min:'Fm',  pc:8,  sig:'4♭' },
+  { maj:'E♭', min:'Cm',  pc:3,  sig:'3♭' },
+  { maj:'B♭', min:'Gm',  pc:10, sig:'2♭' },
+  { maj:'F',  min:'Dm',  pc:5,  sig:'1♭' },
+];
+const DIA_MAJOR = [0,2,4,5,7,9,11];
+const ROMANS  = ['I','ii','iii','IV','V','vi','vii°'];
+const DEG_SYM = ['','m','m','','','m','°'];
+const keyInfoFor = (root) => CO5.find(x => x.pc === root) || CO5[0];
+function diatonicTriads(root){
+  return [0,1,2,3,4,5,6].map(d => {
+    const semis = [d, d+2, d+4].map(x => DIA_MAJOR[x % 7] + 12 * Math.floor(x / 7));
+    return { roman:ROMANS[d], name:NOTES[(root + DIA_MAJOR[d]) % 12] + DEG_SYM[d],
+             midis: semis.map(s => 60 + root + s) };
+  });
+}
+
 /* ── Audio (additive synthesized piano — no samples) ──
  * Each note is a stack of sine partials with slight string inharmonicity, shaped by a
  * piano-like envelope (fast attack, two-stage decay) and a brightness rolloff that darkens
@@ -264,6 +295,38 @@ function Keyboard({ voicing, bassMidi, onKey }){
   );
 }
 
+/* ── Circle of Fifths wheel (two rings: major outer, relative-minor inner) ── */
+function polar(cx, cy, r, deg){ const a = (deg - 90) * Math.PI / 180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
+function wedgePath(cx, cy, rIn, rOut, a0, a1){
+  const [x0,y0] = polar(cx,cy,rOut,a0), [x1,y1] = polar(cx,cy,rOut,a1);
+  const [x2,y2] = polar(cx,cy,rIn,a1),  [x3,y3] = polar(cx,cy,rIn,a0);
+  const large = (a1 - a0) <= 180 ? 0 : 1;
+  return `M${x0} ${y0} A${rOut} ${rOut} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${rIn} ${rIn} 0 ${large} 0 ${x3} ${y3} Z`;
+}
+function CircleOfFifths({ root, onPick }){
+  const cx = 130, cy = 130;
+  const wedge = (k, rIn, rOut) => wedgePath(cx, cy, rIn, rOut, k*30 - 15, k*30 + 15);
+  const sel = keyInfoFor(root);
+  return e('svg', { viewBox:'0 0 260 260', width:'100%',
+      style:{ maxWidth:300, display:'block', margin:'0 auto', transform:'translateZ(0)', WebkitTransform:'translateZ(0)' } },
+    CO5.map((it,k) => {
+      const on = it.pc === root, [lx,ly] = polar(cx,cy,96,k*30);
+      return e('g',{ key:'M'+k, onClick:()=>onPick(it.pc), style:{cursor:'pointer'} },
+        e('path',{ d:wedge(k,72,120), fill:on?'var(--accent)':'var(--bg3)', stroke:'var(--border)', strokeWidth:1 }),
+        e('text',{ x:lx, y:ly+5, textAnchor:'middle', fontSize:15, fontWeight:800, fill:on?'#07070f':'var(--txt)' }, it.maj));
+    }),
+    CO5.map((it,k) => {
+      const on = it.pc === root, [lx,ly] = polar(cx,cy,52,k*30);
+      return e('g',{ key:'m'+k, onClick:()=>onPick(it.pc), style:{cursor:'pointer'} },
+        e('path',{ d:wedge(k,34,72), fill:on?'var(--tone)':'var(--bg2)', stroke:'var(--border)', strokeWidth:1 }),
+        e('text',{ x:lx, y:ly+4, textAnchor:'middle', fontSize:11, fontWeight:700, fill:on?'#07070f':'var(--hint)' }, it.min));
+    }),
+    e('circle',{ cx, cy, r:33, fill:'var(--bg2)', stroke:'var(--border)', strokeWidth:1 }),
+    e('text',{ x:cx, y:cy-1, textAnchor:'middle', fontSize:16, fontWeight:800, fill:'var(--txt)' }, sel.maj),
+    e('text',{ x:cx, y:cy+14, textAnchor:'middle', fontSize:10, fill:'var(--hint)' }, sel.sig === '0' ? '♮' : sel.sig)
+  );
+}
+
 /* ── Upgrade sheet (RevenueCat purchase + 7-day trial + restore) ── */
 function UpgradeSheet({ feature, canTrial, busy, onClose, onUnlock, onStartTrial, onRestore }){
   return e('div', { onClick:onClose, style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
@@ -318,6 +381,9 @@ function tourStepsFor(key){
     ];
     case 'find': return [
       { title:'Find a chord', body:'Tap notes on the keyboard and we’ll name the chord. The lowest note (red) is read as the bass, so inversions and slash chords are named too. Tap Clear to start over.' },
+    ];
+    case 'keys': return [
+      { title:'Keys & the circle of fifths', body:'Tap any key on the wheel to see its signature, relative minor, and the seven chords that belong to it (with Roman numerals). Tap a chord to hear it.' },
     ];
     default: return [];
   }
@@ -388,8 +454,8 @@ function App(){
   const onTrial     = owned !== 'pro' && msLeft > 0;
   const trialDays   = Math.ceil(msLeft / DAY_MS);
   const canTrial    = !trialStart;                                   // never started = eligible
-  // Find is Pro; if a saved pc-tab='find' loads without Pro, fall back to Chords.
-  const activeTab   = (tab === 'find' && !isPro) ? 'chords' : tab;
+  // Find & Keys are Pro; if a saved pc-tab loads without Pro, fall back to Chords.
+  const activeTab   = ((tab === 'find' || tab === 'keys') && !isPro) ? 'chords' : tab;
   const ch    = CHORDS[ci];
   // Clamp inversion if the new chord has fewer tones (e.g. switching 7th→triad).
   const safeInv = Math.min(inv, ch.ivls.length - 1);
@@ -399,6 +465,10 @@ function App(){
   // Scale: render one ascending octave (root → octave), root colored as the "bass".
   const sc         = SCALES[si];
   const scaleMidis = [...sc.ivls.map(i => 60 + root + i), 60 + root + 12];
+
+  // Keys: circle-of-fifths entry + diatonic chords for the selected root (as a major key).
+  const keyInfo  = keyInfoFor(root);
+  const diatonic = diatonicTriads(root);
 
   // Find: derive pitch classes + bass from the selected notes, then name matches.
   const selSorted = [...sel].sort((a,b) => a - b);
@@ -429,7 +499,10 @@ function App(){
     setTour(null);
   };
   const pickTab = (t) => {
-    if (t === 'find' && !isPro){ setUpg('Find Chord'); track('paywall.shown',{feature:'Find Chord'}); return; }
+    if ((t === 'find' || t === 'keys') && !isPro){
+      const feat = t === 'find' ? 'Find Chord' : 'Circle of Fifths';
+      setUpg(feat); track('paywall.shown',{feature:feat}); return;
+    }
     setTab(t); track('tab.switched',{tab:t});
     // Per-tab contextual tip, shown once, only after onboarding and when nothing else is open.
     if (localStorage.getItem('pc-onboarded') && !localStorage.getItem('pc-tip-'+t) && !tour && !upg){
@@ -488,16 +561,36 @@ function App(){
 
     /* Tabs */
     e('div',{style:{display:'flex',gap:6,marginBottom:14}},
-      [['chords','Chords'],['scales','Scales'],['find','Find']].map(([t,label]) =>
+      [['chords','Chords'],['scales','Scales'],['find','Find'],['keys','Keys']].map(([t,label]) =>
         e('button',{ key:t, onClick:()=>pickTab(t),
-          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.9rem',
+          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.82rem',
             border:'1px solid var(--border)',
             background: activeTab===t?'var(--accent)':'var(--bg2)',
             color: activeTab===t?'#07070f':'var(--txt)' } },
-          label, (t==='find' && !isPro) ? ' 🔒' : ''))
+          label, ((t==='find'||t==='keys') && !isPro) ? ' 🔒' : ''))
     ),
 
-    activeTab==='find'
+    activeTab==='keys'
+    ? e(React.Fragment,{key:'keys'},
+        /* Circle of fifths */
+        e('div',{style:card}, e(CircleOfFifths,{ root, onPick:setRoot })),
+        /* Key summary + diatonic chords */
+        e('div',{style:card},
+          e('div',{style:{textAlign:'center',marginBottom:12}},
+            e('div',{style:{fontSize:'1.5rem',fontWeight:800}}, keyInfo.maj + ' major'),
+            e('div',{style:{fontSize:'.82rem',color:'var(--hint)',marginTop:3}},
+              'Relative minor: ' + keyInfo.min + '  ·  Key signature: ' +
+              (keyInfo.sig === '0' ? 'none' : keyInfo.sig))),
+          e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'0 2px 8px',letterSpacing:'.04em'}},'CHORDS IN THIS KEY'),
+          e('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}},
+            diatonic.map((dc,i)=>e('button',{ key:i, onClick:()=>{ playChord(dc.midis); track('diatonic.played',{key:root,roman:dc.roman}); },
+              style:{ padding:'8px 2px', borderRadius:8, cursor:'pointer', border:'1px solid var(--border)',
+                background:'var(--bg2)', color:'var(--txt)', display:'flex', flexDirection:'column', alignItems:'center', gap:2 } },
+              e('span',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--hint)'}}, dc.roman),
+              e('span',{style:{fontSize:'.9rem',fontWeight:700}}, dc.name))))
+        )
+      )
+    : activeTab==='find'
     ? e(React.Fragment,{key:'find'},
         /* Result card */
         e('div',{style:{...card, textAlign:'center'}},
@@ -575,8 +668,8 @@ function App(){
         e('div',{style:card}, e(Keyboard,{ voicing:scaleMidis, bassMidi:60+root }))
       ),
 
-    /* Root picker (shared by Chords + Scales; not used in Find) */
-    activeTab!=='find'
+    /* Root picker (shared by Chords + Scales; Find & Keys pick the root their own way) */
+    (activeTab!=='find' && activeTab!=='keys')
     ? e(React.Fragment,{key:'rootpick'},
         e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
         e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},

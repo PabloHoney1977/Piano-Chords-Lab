@@ -43,6 +43,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [ ] Wire iOS credentials (Apple Developer + RevenueCat) and run the first TestFlight build
 - [~] Audio: upgraded to an additive synth (inharmonic partials, piano ADSR, reverb/compressor bus); real samples still the eventual goal
 - [x] "Find chord" reverse lookup (tap keys → name the chord, bass-aware slash chords)
+- [x] Keys tab: interactive circle of fifths + "chords in this key" (diatonic triads with Roman numerals)
 - [x] Onboarding + two-tier tour (overview on first run / `?` button; per-tab contextual tips)
 - [ ] Streak tracking + milestones (port from Jazz Guitar Lab)
 - [x] Pricing decision — `$6.99` one-time (`app.js` `PRICE`; rationale in `CLAUDE.md`)

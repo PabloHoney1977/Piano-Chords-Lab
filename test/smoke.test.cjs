@@ -133,6 +133,35 @@ test('per-tab contextual tip shows once on first visit', async () => {
   }, { onboarded: true, tips: false });
 });
 
+test('Keys tab is Pro-gated for free users', async () => {
+  await withApp(async (page) => {
+    await page.click('text=Keys');
+    assert.ok(await page.$('text=Unlock Pro'), 'paywall shown when free user taps Keys');
+    assert.ok(!(await page.$('text=CHORDS IN THIS KEY')), 'Keys view not rendered');
+  });
+});
+
+test('Keys: circle of fifths + diatonic chords for the selected key', async () => {
+  await withApp(async (page) => {
+    await page.click('header button:has-text("Essentials")'); // dev toggle → Pro
+    await page.click('text=Keys');
+    await page.waitForSelector('text=CHORDS IN THIS KEY');
+    assert.ok(await page.$('text=C major'), 'defaults to C major');
+    assert.ok((await page.$$('svg path')).length >= 24, 'circle-of-fifths wheel rendered (24 wedges)');
+    // Diatonic triads of C major: Roman numerals present, vii° is B diminished.
+    let labels = await page.$$eval('button span', ss => ss.map(s => s.textContent));
+    for (const r of ['I','IV','V','vii°']) assert.ok(labels.includes(r), `has ${r}`);
+    assert.ok(labels.includes('B°'), 'vii° of C is B diminished');
+    // Key follows the shared root: pick D → summary + diatonic update (vii° becomes C♯°).
+    await page.click('button:has-text("Chords")');
+    await page.getByText('D', { exact: true }).click();
+    await page.click('text=Keys');
+    await page.waitForSelector('text=D major');
+    labels = await page.$$eval('button span', ss => ss.map(s => s.textContent));
+    assert.ok(labels.includes('C♯°'), 'vii° of D is C♯ diminished');
+  });
+});
+
 test('audio: pianoNote renders an audible, decaying, non-clipping tone', async () => {
   await withApp(async (page) => {
     // app.js is a classic script, so its synth functions are globals — render the
