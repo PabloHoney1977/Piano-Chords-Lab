@@ -76,7 +76,7 @@ async function openApp(browser, url, opts = {}) {
   const ctx = await browser.newContext({ serviceWorkers: 'block' });
   const seed = [];
   if (onboarded) seed.push("localStorage.setItem('pc-onboarded','1');");
-  if (tips) seed.push("['chords','scales','find','keys'].forEach(t=>localStorage.setItem('pc-tip-'+t,'1'));");
+  if (tips) seed.push("['chords','scales','find','keys','ear'].forEach(t=>localStorage.setItem('pc-tip-'+t,'1'));");
   if (seed.length) await ctx.addInitScript(`try{${seed.join('')}}catch(e){}`);
   const page = await ctx.newPage();
   await page.route('**/unpkg.com/react@**/react.production.min.js',

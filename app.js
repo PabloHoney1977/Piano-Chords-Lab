@@ -4,6 +4,9 @@
  * This is a STARTER scaffold — a working "Build a Chord" core to grow from.
  * See CLAUDE.md for what to port from Jazz Guitar Lab (audio samples, IAP, tours). */
 const e = React.createElement;
+const { useState, useEffect, useRef } = React;
+const safeLS    = (k, fb='') => { try { const v = localStorage.getItem(k); return v !== null ? v : fb; } catch(_){ return fb; } };
+const safeLSSet = (k, v) => { try { localStorage.setItem(k, v); } catch(_){} };
 
 /* ── Single source of truth for price (don't scatter literals like the jazz app did) ── */
 const PRICE = '$6.99'; // one-time Pro unlock; single source of truth. See CLAUDE.md pricing note.
@@ -346,6 +349,413 @@ function CircleOfFifths({ root, onPick }){
   );
 }
 
+/* ── Ear trainer (Pro) — ported from Jazz Guitar Lab's EarTrainingView ──
+ * Instrument-agnostic logic kept ~verbatim (4 modes, interval difficulty tiers,
+ * per-item spaced-repetition "weakest" tracking, back/forward history, auto mode
+ * + TTS, persistent scoring, intro gate). Piano layer rebuilt: the play* bodies
+ * drive our pianoNote() synth (MIDI, C4=60); theme constants map to our CSS vars;
+ * cadences adapted to common/pop progressions; localStorage keys prefixed pc-.
+ * The whole tab is Pro-gated, so level is always 'pro' (isEss branches dormant). */
+const UI_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
+const SERIF   = UI_FONT; // JGL used Georgia; keep our sans aesthetic
+const BG2='var(--bg2)', BORDER='var(--border)', HINT='var(--hint)', LBL='var(--txt)',
+  BTN_OFF='var(--txt)', BTN_BRD='var(--border)', GOLD='var(--gold)',
+  ACT_GOLD='var(--bg3)', ACT_RED='var(--bg3)', ACT_YEL='var(--bg3)', WRONG='var(--root)';
+// Chord/triad interval shapes for playback.
+const SHAPE = { major:[0,4,7], minor:[0,3,7], dim:[0,3,6], aug:[0,4,8],
+  maj7:[0,4,7,11], m7:[0,3,7,10], dom7:[0,4,7,10], m7b5:[0,3,6,10], dim7:[0,3,6,9] };
+
+function EarTrainingView({level,onPracticed,onUpgrade}){
+  const isEss=level==='essentials';
+  const practicedRef=useRef(false);
+  const answerCountRef=useRef(0);
+  const skipSaveRef=useRef(0);
+  const levelInitRef=useRef(false);
+  const levelChangingRef=useRef(false);
+
+  const [mode,setMode]=useState('intervals');
+  const [scores,setScores]=useState(()=>{
+    try{const s=JSON.parse(safeLS('pc-ear-scores','{}'));
+      return {intervals:{r:s.intervals?.r||0,w:s.intervals?.w||0},
+        triads:{r:s.triads?.r||0,w:s.triads?.w||0},
+        chords:{r:s.chords?.r||0,w:s.chords?.w||0},
+        cadences:{r:s.cadences?.r||0,w:s.cadences?.w||0}};}
+    catch(ex){return {intervals:{r:0,w:0},triads:{r:0,w:0},chords:{r:0,w:0},cadences:{r:0,w:0}};}
+  });
+  const [detail,setDetail]=useState(()=>{
+    try{const s=JSON.parse(safeLS('pc-ear-detail','{}'));
+      return {intervals:s.intervals||{},triads:s.triads||{},chords:s.chords||{},cadences:s.cadences||{}};}
+    catch(ex){return {intervals:{},triads:{},chords:{},cadences:{}};}
+  });
+  useEffect(()=>{if(skipSaveRef.current>0){skipSaveRef.current--;return;}safeLSSet('pc-ear-scores',JSON.stringify(scores));},[scores]);
+  useEffect(()=>{if(skipSaveRef.current>0){skipSaveRef.current--;return;}safeLSSet('pc-ear-detail',JSON.stringify(detail));},[detail]);
+  const [seenIntro,setSeenIntro]=useState(()=>!!safeLS('pc-ear-intro'));
+  const [current,setCurrent]=useState(null);
+  const [revealed,setRevealed]=useState(false);
+  const [lastResult,setLastResult]=useState(null);
+  const [wrongGuess,setWrongGuess]=useState(null);
+  const [choices,setChoices]=useState([]);
+  const [harmonic,setHarmonic]=useState(false);
+  const [ivalTier,setIvalTier]=useState(()=>{const v=parseInt(safeLS('pc-ear-ival-tier','1'),10);return v>=1&&v<=5?v:1;});
+  useEffect(()=>{safeLSSet('pc-ear-ival-tier',String(ivalTier));},[ivalTier]);
+  const [autoMode,setAutoMode]=useState(false);
+  const historyRef=useRef([]);
+  const autoTimerRef=useRef(null);
+  const autoTimer2Ref=useRef(null);
+  const bestVoiceRef=useRef(null);
+  const autoModeRef=useRef(false);
+
+  useEffect(()=>{
+    function pickVoice(){
+      const vs=window.speechSynthesis?.getVoices()||[];
+      if(!vs.length) return;
+      bestVoiceRef.current=
+        vs.find(v=>/enhanced|premium/i.test(v.name)&&/en[-_]/i.test(v.lang))
+        ||vs.find(v=>/google.*en.*us|en.*us.*google/i.test(v.name))
+        ||vs.find(v=>v.lang==='en-US'&&v.localService)
+        ||vs.find(v=>v.lang==='en-US')
+        ||vs.find(v=>/^en/i.test(v.lang))||null;
+    }
+    pickVoice();
+    window.speechSynthesis?.addEventListener('voiceschanged',pickVoice);
+    return()=>window.speechSynthesis?.removeEventListener('voiceschanged',pickVoice);
+  },[]);
+  useEffect(()=>{autoModeRef.current=autoMode;},[autoMode]);
+  useEffect(()=>{if(!autoMode){clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);window.speechSynthesis?.cancel();}},[autoMode]);
+  useEffect(()=>()=>{clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);window.speechSynthesis?.cancel();},[]);
+
+  const IVALS=[
+    {s:1, name:'Minor 2nd', feel:'"Jaws" theme · "Mission: Impossible"'},
+    {s:2, name:'Major 2nd', feel:'"Happy Birthday" opening · "Frère Jacques"'},
+    {s:3, name:'Minor 3rd', feel:'"Smoke on the Water" · "Greensleeves"'},
+    {s:4, name:'Major 3rd', feel:'"When the Saints…" · Beethoven\'s 5th'},
+    {s:5, name:'Perfect 4th',feel:'"Here Comes the Bride" · "Amazing Grace"'},
+    {s:6, name:'Tritone',   feel:'"The Simpsons" theme · "Maria" (Ma-RÍ-a)'},
+    {s:7, name:'Perfect 5th',feel:'"Star Wars" theme · "Twinkle Twinkle" leap'},
+    {s:8, name:'Minor 6th', feel:'"The Entertainer" · "Because" (Beatles)'},
+    {s:9, name:'Major 6th', feel:'"My Bonnie…" · NBC chimes'},
+    {s:10,name:'Minor 7th', feel:'"Somewhere" (West Side Story) · "Star Trek"'},
+    {s:11,name:'Major 7th', feel:'"Take On Me" chorus · "Don\'t Know Why"'},
+    {s:12,name:'Octave',    feel:'"Over the Rainbow" (Some-WHERE)'},
+  ];
+  const IVAL_TIERS=[
+    {lbl:'Octave & Perfects',  ivals:[5,7,12]},
+    {lbl:'+ Major 3rd & 6th',  ivals:[4,5,7,9,12]},
+    {lbl:'+ Minor 3rd & 6th',  ivals:[3,4,5,7,8,9,12]},
+    {lbl:'+ 2nds & 7ths',      ivals:[2,3,4,5,7,8,9,10,11,12]},
+    {lbl:'All 12',             ivals:[1,2,3,4,5,6,7,8,9,10,11,12]},
+  ];
+  const maxTier=isEss?3:5;
+  const effTier=Math.min(ivalTier,maxTier);
+  const activeIvals=IVALS.filter(x=>IVAL_TIERS[effTier-1].ivals.includes(x.s));
+
+  // Cadences adapted to common/pop progressions (major key, root-relative offsets).
+  const CADENCES=[
+    {id:'I-IV-V',    name:'I–IV–V',        chords:[{r:0,q:'major'},{r:5,q:'major'},{r:7,q:'major'}], feel:'The three-chord backbone of rock, blues & folk'},
+    {id:'I-V-vi-IV', name:'I–V–vi–IV',     chords:[{r:0,q:'major'},{r:7,q:'major'},{r:9,q:'minor'},{r:5,q:'major'}], feel:'The "four-chord song" — countless pop hits'},
+    {id:'ii-V-I',    name:'ii–V–I',        chords:[{r:2,q:'m7'},{r:7,q:'dom7'},{r:0,q:'maj7'}], feel:'The engine of jazz harmony'},
+    {id:'I-vi-IV-V', name:'I–vi–IV–V',     chords:[{r:0,q:'major'},{r:9,q:'minor'},{r:5,q:'major'},{r:7,q:'major'}], feel:'The 1950s doo-wop progression'},
+    {id:'IV-I',      name:'IV–I (plagal)', chords:[{r:5,q:'major'},{r:0,q:'major'}], feel:'The "Amen" cadence'},
+  ];
+
+  const TRIAD_LBL={major:'Major',minor:'Minor',dim:'Diminished',aug:'Augmented'};
+  const TRIAD_DESC={
+    major:'bright, stable — I, IV, V of a major key',
+    minor:'dark, smooth — ii, iii, vi of a major key',
+    dim:'tense, unstable — the vii°; two minor thirds stacked',
+    aug:'eerie, whole-tone color — two major thirds stacked'
+  };
+  const TRIAD_LIST=['major','minor','dim','aug'];
+  const QUALITIES=['maj7','m7','dom7','m7b5'];
+  const QLABELS={'maj7':'Major 7','m7':'Minor 7','dom7':'Dom 7','m7b5':'Half-Dim'};
+  const QDESCS={
+    maj7:'lush, stable — the I and IV chord',
+    m7:'smooth, floating — the ii and vi chord',
+    dom7:'tense, pulling — the V chord',
+    m7b5:'searching, unstable — the vii and minor ii chord'
+  };
+
+  // ── Play functions (piano synth) ──
+  const _ac=()=>{const c=ctx();if(c.state==='suspended')c.resume();return c;};
+  function playInterval(root,sem,isHarmonic){
+    try{const c=_ac(),t=c.currentTime,m1=60+root,m2=m1+sem;
+      pianoNote(c,m1,t+0.05,1.2,0.22);
+      pianoNote(c,m2,isHarmonic?t+0.05:t+0.62,1.2,0.22);
+    }catch(ex){}
+  }
+  function playTriad(root,quality){
+    try{const c=_ac(),t=c.currentTime;
+      (SHAPE[quality]||[0,4,7]).forEach((iv,i)=>pianoNote(c,60+root+iv,t+i*0.09,1.5,0.17));
+    }catch(ex){}
+  }
+  function playSeventh(root,quality){
+    try{const c=_ac(),t=c.currentTime;
+      (SHAPE[quality]||[0,4,7,10]).forEach((iv,i)=>pianoNote(c,60+root+iv,t+i*0.07,1.7,0.15));
+    }catch(ex){}
+  }
+  function playCadence(root,cadence){
+    try{const c=_ac(),t=c.currentTime;
+      cadence.chords.forEach((chord,ci)=>{
+        const chordRoot=(root+chord.r)%12;
+        (SHAPE[chord.q]||[0,4,7]).forEach((iv,ni)=>pianoNote(c,48+chordRoot+iv,t+ci*1.15+ni*0.05,1.4,0.13));
+      });
+    }catch(ex){}
+  }
+  function playRound(r){
+    if(!r||!r.current) return;
+    if(r.mode==='intervals') playInterval(r.current.root,r.current.semitones,!!r.harmonic);
+    else if(r.mode==='triads') playTriad(r.current.root,r.current.quality);
+    else if(r.mode==='cadences') playCadence(r.current.root,r.current.cadence);
+    else playSeventh(r.current.root,r.current.quality);
+  }
+  function replayCurrent(){ if(!current) return; playRound({mode,current,harmonic}); }
+  function pushHistory(){
+    if(!current) return;
+    historyRef.current.push({mode,current,choices,revealed,lastResult,wrongGuess,harmonic});
+    if(historyRef.current.length>50) historyRef.current.shift();
+  }
+  function nextRound(){ pushHistory(); newRound(); }
+  function goBack(){
+    const h=historyRef.current.pop();
+    if(!h){replayCurrent();return;}
+    clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);
+    setCurrent(h.current);setChoices(h.choices||[]);setRevealed(h.revealed);
+    setLastResult(h.lastResult);setWrongGuess(h.wrongGuess);
+    setTimeout(()=>playRound(h),150);
+  }
+  function autoReveal(){
+    if(!current) return;
+    let spk='';
+    if(mode==='intervals'){
+      const iv=IVALS.find(x=>x.s===current.semitones);
+      const ORD={'2nd':'second','3rd':'third','4th':'fourth','5th':'fifth','6th':'sixth','7th':'seventh','8th':'octave'};
+      spk=iv?iv.name.replace(/\b(\d+(?:st|nd|rd|th))\b/g,m=>ORD[m]||m):'';
+    } else if(mode==='triads'){spk=(TRIAD_LBL[current.quality]||'')+' triad';}
+    else if(mode==='cadences'){
+      const m={'I-IV-V':'One four five','I-V-vi-IV':'One five six four','ii-V-I':'Two five one','I-vi-IV-V':'One six four five','IV-I':'Four one'};
+      spk=m[current.cadence.id]||current.cadence.name;
+    } else {
+      const m={'maj7':'Major seven','m7':'Minor seven','dom7':'Dominant seven','m7b5':'Half diminished'};
+      spk=m[current.quality]||QLABELS[current.quality]||'';
+    }
+    setRevealed(true);setLastResult('auto');
+    if(!spk){autoTimerRef.current=setTimeout(newRound,2600);return;}
+    if(window.speechSynthesis){
+      window.speechSynthesis.cancel();
+      const utt=new SpeechSynthesisUtterance(spk);
+      if(bestVoiceRef.current) utt.voice=bestVoiceRef.current;
+      utt.rate=0.82;utt.pitch=0.9;
+      let done=false;
+      function adv(){if(done||!autoModeRef.current)return;done=true;autoTimerRef.current=setTimeout(newRound,1600);}
+      utt.onend=adv;utt.onerror=adv;
+      autoTimerRef.current=setTimeout(adv,Math.max(3000,spk.length*80));
+      window.speechSynthesis.speak(utt);
+    } else { autoTimerRef.current=setTimeout(newRound,2600); }
+  }
+
+  useEffect(()=>{
+    if(!autoMode||!current||revealed)return;
+    clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);
+    autoTimer2Ref.current=setTimeout(replayCurrent,2000);
+    autoTimerRef.current=setTimeout(autoReveal,7000);
+    return()=>{clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);};
+  },[current,autoMode,revealed]); // eslint-disable-line
+
+  function newRound(){
+    const root=Math.floor(Math.random()*12);
+    setRevealed(false);setLastResult(null);setWrongGuess(null);
+    if(mode==='intervals'){
+      const correct=activeIvals[Math.floor(Math.random()*activeIvals.length)];
+      const others=activeIvals.filter(x=>x.s!==correct.s).sort(()=>Math.random()-0.5).slice(0,3);
+      setChoices([correct,...others].sort(()=>Math.random()-0.5));
+      setCurrent({root,semitones:correct.s});
+      setTimeout(()=>playInterval(root,correct.s,harmonic),150);
+    } else if(mode==='triads'){
+      const quality=TRIAD_LIST[Math.floor(Math.random()*4)];
+      setCurrent({root,quality});
+      setTimeout(()=>playTriad(root,quality),150);
+    } else if(mode==='cadences'){
+      const cadencePool=isEss?CADENCES.slice(0,2):CADENCES;
+      const correct=cadencePool[Math.floor(Math.random()*cadencePool.length)];
+      const others=CADENCES.filter(x=>x.id!==correct.id).sort(()=>Math.random()-0.5).slice(0,3);
+      setChoices([correct,...others].sort(()=>Math.random()-0.5));
+      setCurrent({root,cadence:correct});
+      setTimeout(()=>playCadence(root,correct),150);
+    } else {
+      const quality=QUALITIES[Math.floor(Math.random()*4)];
+      setCurrent({root,quality});
+      setTimeout(()=>playSeventh(root,quality),150);
+    }
+  }
+  function guess(answer){
+    if(revealed||!current||autoMode) return;
+    let correct,key;
+    if(mode==='intervals'){correct=answer===current.semitones;key=current.semitones;}
+    else if(mode==='cadences'){correct=answer===current.cadence.id;key=current.cadence.id;}
+    else{correct=answer===current.quality;key=current.quality;}
+    setRevealed(true);setLastResult(correct?'right':'wrong');
+    if(!correct) setWrongGuess(answer);
+    answerCountRef.current++;
+    if(!practicedRef.current&&answerCountRef.current>=5){practicedRef.current=true;onPracticed&&onPracticed();}
+    setScores(s=>({...s,[mode]:{r:s[mode].r+(correct?1:0),w:s[mode].w+(correct?0:1)}}));
+    setDetail(d=>{const m={...d[mode]},en={...m[key]||{r:0,w:0}};en[correct?'r':'w']++;m[key]=en;return{...d,[mode]:m};});
+  }
+  useEffect(()=>{
+    if(seenIntro){
+      if(levelChangingRef.current){levelChangingRef.current=false;return;}
+      clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);
+      historyRef.current=[];
+      newRound();
+    }
+  },[mode,seenIntro,ivalTier]); // eslint-disable-line
+  useEffect(()=>{
+    if(!levelInitRef.current){levelInitRef.current=true;return;}
+    if(!seenIntro) return;
+    clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);
+    if(isEss){
+      setHarmonic(false);setAutoMode(false);
+      if(mode==='triads'||mode==='chords'||mode==='cadences'){levelChangingRef.current=true;setMode('intervals');}
+    }
+    skipSaveRef.current+=2;
+    setScores(s=>({...s,intervals:{r:0,w:0}}));
+    setDetail(d=>({...d,intervals:{}}));
+    historyRef.current=[];
+    newRound();
+  },[level]); // eslint-disable-line
+
+  if(!seenIntro) return e('div',{style:{paddingTop:'12vh',paddingBottom:20,textAlign:'center',maxWidth:420,margin:'0 auto'}},
+    e('div',{style:{fontSize:'2.5rem',marginBottom:12}},'♫'),
+    e('div',{style:{fontSize:'1.1rem',fontWeight:800,fontFamily:SERIF,marginBottom:8}},'Ear Training'),
+    e('div',{style:{fontSize:'.85rem',color:LBL,lineHeight:1.6,marginBottom:20}},
+      'You\'ll hear notes played. Identify what you hear — interval, chord type, or progression. ',
+      'The more you practice, the more your ear recognizes these sounds naturally.'),
+    e('button',{onClick:()=>{setSeenIntro(true);safeLSSet('pc-ear-intro','1');},
+      style:{padding:'11px 28px',borderRadius:8,fontSize:'.95rem',fontWeight:700,background:GOLD,color:'#07070f',border:'none',cursor:'pointer'}},
+      'Start Training →'));
+
+  const sc=scores[mode];
+  const total=sc.r+sc.w;
+  const pct=total>0?Math.round(100*sc.r/total):0;
+  const weakest=(()=>{
+    const dm=detail[mode]||{};
+    let worst=null,worstRate=1;
+    Object.entries(dm).forEach(([k,v])=>{const t=v.r+v.w;if(t<2) return;const rate=v.r/t;if(rate<worstRate){worstRate=rate;worst={k,r:v.r,w:v.w};}});
+    if(!worst) return null;
+    const label=mode==='intervals'?(IVALS.find(x=>x.s===+worst.k)||{name:worst.k}).name
+      :mode==='triads'?(TRIAD_LBL[worst.k]||worst.k)
+      :mode==='cadences'?((CADENCES.find(x=>x.id===worst.k)||{name:worst.k}).name)
+      :(QLABELS[worst.k]||worst.k);
+    return{label,missed:worst.w,total:worst.r+worst.w};
+  })();
+
+  function renderChoices(){
+    const mkBtn=(key,onClick,label,isAns,isWrong)=>e('button',{key,onClick,disabled:revealed,style:{
+      padding:'14px 8px',borderRadius:8,cursor:revealed?'default':'pointer',
+      fontFamily:SERIF,fontSize:'.95rem',fontWeight:700,minHeight:52,
+      border:'2px solid '+(isAns?GOLD:isWrong?WRONG:BTN_BRD),
+      background:isAns?ACT_YEL:isWrong?ACT_RED:BG2,
+      color:isAns?GOLD:isWrong?WRONG:BTN_OFF,
+      opacity:revealed&&!isAns&&!isWrong?0.45:1}},label);
+    if(mode==='intervals') return choices.map(iv=>mkBtn(iv.s,()=>guess(iv.s),iv.name,revealed&&iv.s===current.semitones,revealed&&wrongGuess===iv.s));
+    if(mode==='cadences') return choices.map(cad=>mkBtn(cad.id,()=>guess(cad.id),cad.name,revealed&&cad.id===current.cadence.id,revealed&&wrongGuess===cad.id));
+    const list=mode==='triads'?TRIAD_LIST:QUALITIES, lbls=mode==='triads'?TRIAD_LBL:QLABELS;
+    return list.map(q=>mkBtn(q,()=>guess(q),lbls[q],revealed&&q===current.quality,revealed&&wrongGuess===q));
+  }
+  function renderReveal(){
+    if(!revealed) return null;
+    let answerName,answerDesc;
+    if(mode==='intervals'){const iv=IVALS.find(x=>x.s===current.semitones);answerName=iv?iv.name:'';answerDesc=iv?iv.feel:'';}
+    else if(mode==='triads'){answerName=TRIAD_LBL[current.quality];answerDesc=TRIAD_DESC[current.quality];}
+    else if(mode==='cadences'){answerName=current.cadence.name;answerDesc=current.cadence.feel;}
+    else{answerName=QLABELS[current.quality];answerDesc=QDESCS[current.quality];}
+    if(lastResult==='auto') return e('div',{style:{textAlign:'center',marginBottom:14,padding:'12px 20px',background:BG2,border:'1px solid '+BORDER,borderRadius:8}},
+      e('div',{style:{fontFamily:SERIF,fontSize:'1.1rem',color:GOLD,marginBottom:4}},answerName),
+      e('div',{style:{fontSize:'.77rem',color:HINT}},answerDesc));
+    return e('div',{style:{textAlign:'center',marginBottom:14,padding:'12px 20px',
+      background:lastResult==='right'?ACT_YEL:ACT_RED,border:'1px solid '+(lastResult==='right'?GOLD:WRONG),borderRadius:8}},
+      e('div',{style:{fontSize:'1.05rem',fontWeight:700,color:lastResult==='right'?GOLD:WRONG,marginBottom:4}},lastResult==='right'?'✓ Correct!':'✗ That was…'),
+      e('div',{style:{fontFamily:SERIF,fontSize:'1.1rem',color:GOLD,marginBottom:4}},answerName),
+      e('div',{style:{fontSize:'.77rem',color:HINT}},answerDesc));
+  }
+
+  const intervalHint=mode==='intervals'?(harmonic?'Two notes played together — name the interval':'Two notes played in sequence — name the interval'):null;
+  const modeHint={intervals:intervalHint,triads:'Three-note chord — major, minor, diminished, or augmented?',chords:'Four-note chord — identify the 7th-chord quality',cadences:'A short progression — name it'};
+  const TABS=[{id:'intervals',lbl:'Intervals',locked:false},{id:'triads',lbl:'Triads',locked:isEss},{id:'chords',lbl:'7ths',locked:isEss},{id:'cadences',lbl:'Progressions',locked:isEss}];
+
+  function toggleAuto(){
+    if(!autoMode&&isEss){onUpgrade&&onUpgrade('Auto ear training');return;}
+    if(!autoMode){
+      if(window.speechSynthesis){window.speechSynthesis.cancel();window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));}
+      setAutoMode(true);newRound();
+    } else {
+      clearTimeout(autoTimerRef.current);clearTimeout(autoTimer2Ref.current);
+      window.speechSynthesis?.cancel();clearTimeout(autoTimerRef.current);setAutoMode(false);
+    }
+  }
+
+  return e('div',{style:{padding:'0 0 20px'}},
+    e('div',{style:{textAlign:'center',marginBottom:12}},
+      e('div',{style:{fontFamily:SERIF,fontSize:'1.2rem',fontWeight:800,color:'var(--txt)',marginBottom:4}},'Ear Training'),
+      autoMode?e('div',{style:{fontSize:'.78rem',color:HINT}},'Auto mode — listen and learn, no scoring')
+      :total>0?e('div',null,
+        e('div',{style:{fontSize:'.95rem',fontWeight:700,color:pct>=70?GOLD:WRONG}},pct+'% — '+sc.r+'/'+total),
+        weakest?e('div',{style:{fontSize:'.7rem',color:HINT,marginTop:3}},'⚠ Weakest: '+weakest.label+' ('+weakest.missed+'/'+weakest.total+' missed)'):null
+      ):null),
+    e('div',{style:{display:'flex',gap:2,alignItems:'flex-end'}},
+      TABS.map(({id,lbl,locked})=>e('button',{key:id,onClick:locked?()=>onUpgrade&&onUpgrade(lbl):()=>setMode(id),style:{
+        flex:1,padding:'8px 4px',borderRadius:'6px 6px 0 0',cursor:'pointer',fontSize:'.76rem',fontWeight:mode===id?800:500,
+        border:'1px solid '+BTN_BRD,borderBottom:mode===id?'1px solid '+BG2:'1px solid '+BTN_BRD,
+        background:mode===id?BG2:'transparent',color:mode===id?'var(--txt)':BTN_OFF,marginBottom:mode===id?'-1px':0,
+        position:'relative',zIndex:mode===id?1:0,minHeight:42,...(locked?{opacity:0.6}:{})}},
+        lbl,(locked?e('span',{style:{fontSize:'.6rem',marginLeft:2}},'🔒'):null)))),
+    e('div',{style:{display:'flex',justifyContent:'flex-end',marginTop:4,marginBottom:4}},
+      e('button',{onClick:toggleAuto,title:autoMode?'Turn off auto-advance':'Auto-advance: hear the answer, then next',
+        style:{padding:'5px 10px',borderRadius:8,cursor:'pointer',fontSize:'.72rem',fontWeight:autoMode?700:500,
+          border:'1px solid '+(autoMode?GOLD:BTN_BRD),background:autoMode?ACT_GOLD:'transparent',color:autoMode?GOLD:BTN_OFF,minHeight:36,whiteSpace:'nowrap'}},
+        autoMode?'Auto ●':'Auto ○')),
+    e('div',{style:{background:BG2,border:'1px solid '+BTN_BRD,borderRadius:'0 6px 6px 6px',padding:16,marginBottom:12}},
+      e('div',{style:{fontSize:'.74rem',color:HINT,textAlign:'center',marginBottom:mode==='intervals'?4:14}},modeHint[mode]),
+      mode==='intervals'?e('div',{style:{display:'flex',gap:6,justifyContent:'center',marginBottom:14}},
+        e('button',{onClick:()=>setHarmonic(false),style:{padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:'.72rem',fontWeight:!harmonic?700:500,
+          border:'1px solid '+(!harmonic?GOLD:BTN_BRD),background:!harmonic?ACT_YEL:'transparent',color:!harmonic?GOLD:BTN_OFF,minHeight:30}},'Ascending ↑'),
+        e('button',{onClick:()=>setHarmonic(true),style:{padding:'4px 12px',borderRadius:6,cursor:'pointer',fontSize:'.72rem',fontWeight:harmonic?700:500,
+          border:'1px solid '+(harmonic?GOLD:BTN_BRD),background:harmonic?ACT_YEL:'transparent',color:harmonic?GOLD:BTN_OFF,minHeight:30}},'♪♪ Harmonic')
+      ):null,
+      mode==='intervals'?e('div',{style:{marginBottom:14}},
+        e('div',{style:{fontSize:'.66rem',color:HINT,textAlign:'center',marginBottom:6}},'Difficulty — add intervals as your ear grows'),
+        e('div',{style:{display:'flex',gap:6,justifyContent:'center',flexWrap:'wrap'}},
+          IVAL_TIERS.map((t,i)=>{const tn=i+1,active=effTier===tn;
+            return e('button',{key:tn,onClick:()=>setIvalTier(tn),title:t.lbl,style:{padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:'.7rem',fontWeight:active?700:500,
+              border:'1px solid '+(active?GOLD:BTN_BRD),background:active?ACT_YEL:'transparent',color:active?GOLD:BTN_OFF,minHeight:30}},'Lv'+tn);
+          }))
+      ):null,
+      e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,marginBottom:16}},
+        e('div',{style:{display:'flex',alignItems:'center',gap:20}},
+          e('button',{onClick:autoMode?replayCurrent:goBack,'aria-label':'Previous',disabled:autoMode,style:{
+            width:44,height:44,borderRadius:'50%',border:'1px solid '+BTN_BRD,background:'transparent',color:BTN_OFF,fontSize:'1.2rem',
+            cursor:autoMode?'default':'pointer',opacity:autoMode?0.35:1,display:'flex',alignItems:'center',justifyContent:'center'}},'←'),
+          e('button',{onClick:replayCurrent,style:{width:72,height:72,borderRadius:'50%',border:'2px solid '+GOLD,background:ACT_YEL,color:GOLD,
+            fontSize:'2rem',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 0 16px var(--gold)'}},'♪'),
+          e('button',{onClick:!autoMode&&revealed?nextRound:replayCurrent,'aria-label':'Next',disabled:autoMode,style:{
+            width:44,height:44,borderRadius:'50%',border:'1px solid '+(!autoMode&&revealed?GOLD:BTN_BRD),
+            background:!autoMode&&revealed?ACT_YEL:'transparent',color:!autoMode&&revealed?GOLD:BTN_OFF,fontSize:'1.2rem',
+            cursor:autoMode?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',opacity:autoMode?0.35:1}},'→')),
+        e('div',{style:{fontSize:'.72rem',color:HINT}},autoMode&&!revealed?'Listen… answer coming':autoMode&&revealed?'Next question coming…':'Tap ♪ to replay')),
+      renderReveal(),
+      !revealed&&mode==='intervals'?e('div',{style:{marginBottom:12}},
+        e('details',{style:{cursor:'pointer'}},
+          e('summary',{style:{fontSize:'.7rem',color:HINT,userSelect:'none',listStyle:'none',textAlign:'center'}},'▸ Song reference hints'),
+          e('div',{style:{marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}},
+            activeIvals.map(iv=>e('div',{key:iv.s,style:{fontSize:'.68rem',color:HINT,padding:'3px 6px',borderRadius:4,border:'1px solid '+BORDER,lineHeight:1.4}},
+              e('span',{style:{color:BTN_OFF,fontWeight:600}},(['P1','m2','M2','m3','M3','P4','TT','P5','m6','M6','m7','M7','P8'][iv.s]||iv.name)+' '),iv.feel)))
+        )):null,
+      current?e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:revealed?12:0}},renderChoices()):null
+    ),
+    !autoMode?e('button',{onClick:()=>{setScores(s=>({...s,[mode]:{r:0,w:0}}));setDetail(d=>({...d,[mode]:{}}));},style:{
+      width:'100%',padding:8,background:'transparent',border:'1px solid '+BTN_BRD,borderRadius:6,color:BTN_OFF,fontSize:'.78rem',cursor:'pointer',minHeight:40}},'Reset score'):null
+  );
+}
+
 /* ── Upgrade sheet (RevenueCat purchase + 7-day trial + restore) ── */
 function UpgradeSheet({ feature, canTrial, busy, onClose, onUnlock, onStartTrial, onRestore }){
   return e('div', { onClick:onClose, style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
@@ -403,6 +813,9 @@ function tourStepsFor(key){
     ];
     case 'keys': return [
       { title:'Keys & the circle of fifths', body:'Tap any key on the wheel to see its signature, relative minor, and the seven chords that belong to it (with Roman numerals). Tap a chord to hear it.' },
+    ];
+    case 'ear': return [
+      { title:'Train your ear', body:'Listen, then pick what you heard. Four modes up top — intervals, triads, 7th chords, and progressions — with difficulty levels, song-reference hints, and an auto mode that speaks the answers. Your accuracy and weakest items are tracked.' },
     ];
     default: return [];
   }
@@ -473,8 +886,9 @@ function App(){
   const onTrial     = owned !== 'pro' && msLeft > 0;
   const trialDays   = Math.ceil(msLeft / DAY_MS);
   const canTrial    = !trialStart;                                   // never started = eligible
-  // Find & Keys are Pro; if a saved pc-tab loads without Pro, fall back to Chords.
-  const activeTab   = ((tab === 'find' || tab === 'keys') && !isPro) ? 'chords' : tab;
+  // Find, Keys & Ear are Pro; if a saved pc-tab loads without Pro, fall back to Chords.
+  const PRO_TABS    = ['find','keys','ear'];
+  const activeTab   = (PRO_TABS.includes(tab) && !isPro) ? 'chords' : tab;
   const ch    = CHORDS[ci];
   // Clamp inversion if the new chord has fewer tones (e.g. switching 7th→triad).
   const safeInv = Math.min(inv, ch.ivls.length - 1);
@@ -518,8 +932,8 @@ function App(){
     setTour(null);
   };
   const pickTab = (t) => {
-    if ((t === 'find' || t === 'keys') && !isPro){
-      const feat = t === 'find' ? 'Find Chord' : 'Circle of Fifths';
+    if (PRO_TABS.includes(t) && !isPro){
+      const feat = t === 'find' ? 'Find Chord' : t === 'keys' ? 'Circle of Fifths' : 'Ear Training';
       setUpg(feat); track('paywall.shown',{feature:feat}); return;
     }
     setTab(t); track('tab.switched',{tab:t});
@@ -580,16 +994,18 @@ function App(){
 
     /* Tabs */
     e('div',{style:{display:'flex',gap:6,marginBottom:14}},
-      [['chords','Chords'],['scales','Scales'],['find','Find'],['keys','Keys']].map(([t,label]) =>
+      [['chords','Chords'],['scales','Scales'],['find','Find'],['keys','Keys'],['ear','Ear']].map(([t,label]) =>
         e('button',{ key:t, onClick:()=>pickTab(t),
-          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.82rem',
+          style:{ flex:1, padding:'9px 2px', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.78rem',
             border:'1px solid var(--border)',
             background: activeTab===t?'var(--accent)':'var(--bg2)',
             color: activeTab===t?'#07070f':'var(--txt)' } },
-          label, ((t==='find'||t==='keys') && !isPro) ? ' 🔒' : ''))
+          label, (PRO_TABS.includes(t) && !isPro) ? ' 🔒' : ''))
     ),
 
-    activeTab==='keys'
+    activeTab==='ear'
+    ? e(EarTrainingView,{ key:'ear', level:'pro', onUpgrade:()=>{}, onPracticed:()=>track('ear.practiced') })
+    : activeTab==='keys'
     ? e(React.Fragment,{key:'keys'},
         /* Circle of fifths */
         e('div',{style:card}, e(CircleOfFifths,{ root, onPick:setRoot })),
@@ -687,8 +1103,8 @@ function App(){
         e('div',{style:card}, e(Keyboard,{ voicing:scaleMidis, bassMidi:60+root }))
       ),
 
-    /* Root picker (shared by Chords + Scales; Find & Keys pick the root their own way) */
-    (activeTab!=='find' && activeTab!=='keys')
+    /* Root picker (shared by Chords + Scales only; other tabs pick the root their own way) */
+    (activeTab==='chords' || activeTab==='scales')
     ? e(React.Fragment,{key:'rootpick'},
         e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
         e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},

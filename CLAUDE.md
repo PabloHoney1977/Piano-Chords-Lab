@@ -57,6 +57,14 @@ A working **Build-a-Chord** core:
   driving the shared `root`, plus **"chords in this key"** — `diatonicTriads(root)` builds the seven
   major-key triads with Roman numerals (I ii iii IV V vi vii°), each tappable to play. Also Pro-gated
   via `activeTab`.
+- **Ear tab** (Pro): `EarTrainingView` — **ported from Jazz Guitar Lab's ear trainer** (the mature
+  module, not a rebuild). 4 modes (intervals / triads / 7th chords / progressions), interval
+  difficulty tiers (Lv1–5), per-item spaced-repetition "weakest" tracking, song-reference hints,
+  back/forward history, and an **auto mode** that speaks answers via Web Speech TTS. Instrument-
+  agnostic logic kept ~verbatim; piano layer rebuilt: `play*` bodies drive `pianoNote()` (MIDI,
+  C4=60), theme constants → our CSS vars, **cadences adapted to common/pop progressions**
+  (I–IV–V, I–V–vi–IV, ii–V–I, I–vi–IV–V, IV–I), keys prefixed `pc-ear-*`. Whole tab is Pro, so
+  `level='pro'` (the essentials branches are dormant). TTS MP3 clips + pedal support dropped.
 - **Additive synth piano** (`pianoNote`/`playChord`/`playSeq`/`playMidi`): 6 inharmonic sine
   partials + piano ADSR (fast attack, two-stage decay) + per-note brightness rolloff, through a
   shared master `bus()` (synthesized convolution reverb, high-shelf, compressor). Not samples,
