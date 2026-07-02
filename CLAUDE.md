@@ -51,6 +51,11 @@ A working **Build-a-Chord** core:
   bass-aware for slash chords (C-E-G-A over C → `C6`, also `Am7/C`). Root-position matches
   rank first. Tab is Pro-gated at entry (`activeTab` falls back to Chords if a saved
   `pc-tab='find'` loads without Pro). 2-note selections show the interval name.
+- **Keys tab** (Pro): interactive **circle of fifths** (`CircleOfFifths` SVG wheel — `CO5` data,
+  `wedgePath`/`polar` helpers; outer majors, inner relative minors, center hub with key + signature)
+  driving the shared `root`, plus **"chords in this key"** — `diatonicTriads(root)` builds the seven
+  major-key triads with Roman numerals (I ii iii IV V vi vii°), each tappable to play. Also Pro-gated
+  via `activeTab`.
 - **Additive synth piano** (`pianoNote`/`playChord`/`playSeq`/`playMidi`): 6 inharmonic sine
   partials + piano ADSR (fast attack, two-stage decay) + per-note brightness rolloff, through a
   shared master `bus()` (synthesized convolution reverb, high-shelf, compressor). Not samples,
