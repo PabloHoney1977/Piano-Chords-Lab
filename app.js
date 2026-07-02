@@ -346,6 +346,99 @@ function CircleOfFifths({ root, onPick }){
   );
 }
 
+/* ── Ear trainer (Pro): play-and-identify quizzes for chords & intervals ── */
+const QUIZ_CHORD_IDS = ['maj','min','dom7','min7','maj7','m7b5','dim7','aug','sus4','maj6'];
+const EAR_INTERVALS = [
+  {semi:1,name:'Minor 2nd'},{semi:2,name:'Major 2nd'},{semi:3,name:'Minor 3rd'},{semi:4,name:'Major 3rd'},
+  {semi:5,name:'Perfect 4th'},{semi:6,name:'Tritone'},{semi:7,name:'Perfect 5th'},{semi:8,name:'Minor 6th'},
+  {semi:9,name:'Major 6th'},{semi:10,name:'Minor 7th'},{semi:11,name:'Major 7th'},{semi:12,name:'Octave'},
+];
+const shuffle = (a) => { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+// k options that always include `must`, shuffled.
+function pickSample(pool, k, must){
+  const rest = shuffle(pool.filter(x => x !== must)).slice(0, k-1);
+  return shuffle([must, ...rest]);
+}
+function EarTrainer(){
+  const [mode, setMode]   = React.useState('chords');   // 'chords' | 'intervals'
+  const [q, setQ]         = React.useState(null);
+  const [picked, setPicked] = React.useState(null);
+  const [score, setScore] = React.useState({ c:0, n:0 });
+  const [streak, setStreak] = React.useState(0);
+  const [best, setBest]   = React.useState(() => +(localStorage.getItem('pc-ear-best') || 0));
+
+  const gen = (m) => {
+    if (m === 'intervals'){
+      const answer = EAR_INTERVALS[Math.floor(Math.random()*EAR_INTERVALS.length)];
+      const base = 60 + Math.floor(Math.random()*12);
+      return { answer, options: pickSample(EAR_INTERVALS,4,answer),
+               play: () => playSeq([base, base+answer.semi]), label: o => o.name };
+    }
+    const pool = CHORDS.filter(c => QUIZ_CHORD_IDS.includes(c.id));
+    const answer = pool[Math.floor(Math.random()*pool.length)];
+    const root = Math.floor(Math.random()*12);
+    return { answer, options: pickSample(pool,4,answer),
+             play: () => playChord(answer.ivls.map(i => 60+root+i)), label: o => o.name };
+  };
+
+  React.useEffect(() => {
+    const nq = gen(mode); setQ(nq); setPicked(null);
+    const t = setTimeout(() => nq.play(), 180); return () => clearTimeout(t);
+  }, [mode]);
+
+  const choose = (i) => {
+    if (picked !== null || !q) return;
+    setPicked(i);
+    const correct = q.options[i] === q.answer;
+    setScore(s => ({ c:s.c+(correct?1:0), n:s.n+1 }));
+    if (correct) setStreak(s => { const ns=s+1; if (ns>best){ setBest(ns); localStorage.setItem('pc-ear-best',String(ns)); } return ns; });
+    else setStreak(0);
+    track('ear.answer',{ mode, correct });
+  };
+  const next = () => { const nq = gen(mode); setQ(nq); setPicked(null); setTimeout(() => nq.play(), 140); };
+
+  if (!q) return null;
+  const answered = picked !== null;
+  const win = answered && q.options[picked] === q.answer;
+  const optStyle = (o,i) => {
+    let bg='var(--bg2)', col='var(--txt)';
+    if (answered){
+      if (o === q.answer){ bg='var(--tone)'; col='#07070f'; }
+      else if (i === picked){ bg='var(--root)'; col='#07070f'; }
+      else col='var(--hint)';
+    }
+    return { padding:'15px 10px', borderRadius:10, cursor:answered?'default':'pointer', fontWeight:700,
+      fontSize:'.95rem', border:'1px solid var(--border)', background:bg, color:col };
+  };
+  return e(React.Fragment, null,
+    e('div',{style:{display:'flex',gap:6,marginBottom:14}},
+      [['chords','Chords'],['intervals','Intervals']].map(([m,l]) =>
+        e('button',{ key:m, onClick:()=>setMode(m),
+          style:{ flex:1, padding:'8px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.85rem',
+            border:'1px solid var(--border)', background:mode===m?'var(--accent)':'var(--bg2)',
+            color:mode===m?'#07070f':'var(--txt)' } }, l))),
+    e('div',{style:{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:12, padding:18, marginBottom:14, textAlign:'center' }},
+      e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',letterSpacing:'.04em',marginBottom:12}},
+        mode==='chords' ? 'WHAT CHORD IS THIS?' : 'WHAT INTERVAL IS THIS?'),
+      e('button',{ onClick:()=>q.play(),
+        style:{ padding:'12px 26px', borderRadius:10, cursor:'pointer', fontWeight:800, fontSize:'1rem',
+          background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Hear it again'),
+      answered
+        ? e('div',{style:{marginTop:12,fontSize:'.95rem',fontWeight:800,color:win?'var(--tone)':'var(--root)'}},
+            win ? 'Correct! ✓' : 'Answer: ' + q.label(q.answer))
+        : null),
+    e('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,marginBottom:14}},
+      q.options.map((o,i) => e('button',{ key:i, onClick:()=>choose(i), style:optStyle(o,i) }, q.label(o)))),
+    answered
+      ? e('button',{ onClick:next,
+          style:{ width:'100%', padding:14, borderRadius:10, cursor:'pointer', fontWeight:800,
+            background:'var(--gold)', border:'none', color:'#07070f', marginBottom:14 } }, 'Next ▶')
+      : null,
+    e('div',{style:{textAlign:'center',fontSize:'.8rem',color:'var(--hint)',paddingBottom:30}},
+      `Score ${score.c}/${score.n}   ·   Streak ${streak}   ·   Best ${best}`)
+  );
+}
+
 /* ── Upgrade sheet (RevenueCat purchase + 7-day trial + restore) ── */
 function UpgradeSheet({ feature, canTrial, busy, onClose, onUnlock, onStartTrial, onRestore }){
   return e('div', { onClick:onClose, style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
@@ -403,6 +496,9 @@ function tourStepsFor(key){
     ];
     case 'keys': return [
       { title:'Keys & the circle of fifths', body:'Tap any key on the wheel to see its signature, relative minor, and the seven chords that belong to it (with Roman numerals). Tap a chord to hear it.' },
+    ];
+    case 'ear': return [
+      { title:'Train your ear', body:'Listen to a chord or interval and pick what you heard. “Hear it again” replays it; your streak and best score are tracked. Switch between Chords and Intervals up top.' },
     ];
     default: return [];
   }
@@ -473,8 +569,9 @@ function App(){
   const onTrial     = owned !== 'pro' && msLeft > 0;
   const trialDays   = Math.ceil(msLeft / DAY_MS);
   const canTrial    = !trialStart;                                   // never started = eligible
-  // Find & Keys are Pro; if a saved pc-tab loads without Pro, fall back to Chords.
-  const activeTab   = ((tab === 'find' || tab === 'keys') && !isPro) ? 'chords' : tab;
+  // Find, Keys & Ear are Pro; if a saved pc-tab loads without Pro, fall back to Chords.
+  const PRO_TABS    = ['find','keys','ear'];
+  const activeTab   = (PRO_TABS.includes(tab) && !isPro) ? 'chords' : tab;
   const ch    = CHORDS[ci];
   // Clamp inversion if the new chord has fewer tones (e.g. switching 7th→triad).
   const safeInv = Math.min(inv, ch.ivls.length - 1);
@@ -518,8 +615,8 @@ function App(){
     setTour(null);
   };
   const pickTab = (t) => {
-    if ((t === 'find' || t === 'keys') && !isPro){
-      const feat = t === 'find' ? 'Find Chord' : 'Circle of Fifths';
+    if (PRO_TABS.includes(t) && !isPro){
+      const feat = t === 'find' ? 'Find Chord' : t === 'keys' ? 'Circle of Fifths' : 'Ear Training';
       setUpg(feat); track('paywall.shown',{feature:feat}); return;
     }
     setTab(t); track('tab.switched',{tab:t});
@@ -580,16 +677,18 @@ function App(){
 
     /* Tabs */
     e('div',{style:{display:'flex',gap:6,marginBottom:14}},
-      [['chords','Chords'],['scales','Scales'],['find','Find'],['keys','Keys']].map(([t,label]) =>
+      [['chords','Chords'],['scales','Scales'],['find','Find'],['keys','Keys'],['ear','Ear']].map(([t,label]) =>
         e('button',{ key:t, onClick:()=>pickTab(t),
-          style:{ flex:1, padding:'9px 0', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.82rem',
+          style:{ flex:1, padding:'9px 2px', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:'.78rem',
             border:'1px solid var(--border)',
             background: activeTab===t?'var(--accent)':'var(--bg2)',
             color: activeTab===t?'#07070f':'var(--txt)' } },
-          label, ((t==='find'||t==='keys') && !isPro) ? ' 🔒' : ''))
+          label, (PRO_TABS.includes(t) && !isPro) ? ' 🔒' : ''))
     ),
 
-    activeTab==='keys'
+    activeTab==='ear'
+    ? e(EarTrainer,{ key:'ear' })
+    : activeTab==='keys'
     ? e(React.Fragment,{key:'keys'},
         /* Circle of fifths */
         e('div',{style:card}, e(CircleOfFifths,{ root, onPick:setRoot })),
@@ -687,8 +786,8 @@ function App(){
         e('div',{style:card}, e(Keyboard,{ voicing:scaleMidis, bassMidi:60+root }))
       ),
 
-    /* Root picker (shared by Chords + Scales; Find & Keys pick the root their own way) */
-    (activeTab!=='find' && activeTab!=='keys')
+    /* Root picker (shared by Chords + Scales only; other tabs pick the root their own way) */
+    (activeTab==='chords' || activeTab==='scales')
     ? e(React.Fragment,{key:'rootpick'},
         e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'4px 2px 8px',letterSpacing:'.04em'}},'ROOT'),
         e('div',{style:{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:6,marginBottom:16}},
