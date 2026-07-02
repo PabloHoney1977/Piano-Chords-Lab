@@ -95,19 +95,69 @@ function identifyChord(pcs, bassPC){
   return out;
 }
 
-/* ── Audio (simple oscillator piano — port real samples from Jazz Guitar Lab later) ── */
+/* ── Audio (additive synthesized piano — no samples) ──
+ * Each note is a stack of sine partials with slight string inharmonicity, shaped by a
+ * piano-like envelope (fast attack, two-stage decay) and a brightness rolloff that darkens
+ * as the note decays. All notes feed a shared master bus: convolution reverb (synthesized
+ * impulse), a high-shelf to tame harshness, and a compressor to glue chords. Still a synth,
+ * but far closer to a real piano than the old two-oscillator beep. Swap for samples later. */
 let _actx;
 const ctx = () => (_actx = _actx || new (window.AudioContext || window.webkitAudioContext)());
+
+// Relative amplitude of partials 1..6 (normalized to sum ≈ 1 so chords don't clip).
+const PARTIAL_GAIN = [0.5, 0.25, 0.12, 0.07, 0.04, 0.02];
+const INHARMONICITY = 0.0004; // piano strings: fn = n·f0·√(1+B·n²)
+
+let _bus;
+function makeImpulse(c, seconds, decay){
+  const len = Math.floor(c.sampleRate * seconds);
+  const buf = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++){
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random()*2 - 1) * Math.pow(1 - i/len, decay);
+  }
+  return buf;
+}
+function bus(c){
+  if (_bus) return _bus;
+  const input = c.createGain();
+  const sum   = c.createGain();
+  const dry   = c.createGain(); dry.gain.value = 0.88;
+  const wet   = c.createGain(); wet.gain.value = 0.11;
+  const rev   = c.createConvolver(); rev.buffer = makeImpulse(c, 2.2, 2.6);
+  const shelf = c.createBiquadFilter(); shelf.type = 'highshelf'; shelf.frequency.value = 3200; shelf.gain.value = -4;
+  const comp  = c.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.knee.value = 24; comp.ratio.value = 3; comp.attack.value = 0.003; comp.release.value = 0.25;
+  const master = c.createGain(); master.gain.value = 0.85;
+  input.connect(dry).connect(sum);
+  input.connect(rev).connect(wet).connect(sum);
+  sum.connect(shelf).connect(comp).connect(master).connect(c.destination);
+  _bus = { input };
+  return _bus;
+}
 function pianoNote(c, midi, when, dur, vol){
-  const f = 440 * Math.pow(2, (midi - 69) / 12);
-  const o1 = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain();
-  o1.type = 'triangle'; o2.type = 'sine';
-  o1.frequency.value = f; o2.frequency.value = f * 2;
+  const f0 = 440 * Math.pow(2, (midi - 69) / 12);
+  const out = bus(c).input;
+  const g = c.createGain();
+  // Piano envelope: ~4ms attack, fast decay to ~40%, then a longer decay to the tail.
   g.gain.setValueAtTime(0.0001, when);
-  g.gain.linearRampToValueAtTime(vol, when + 0.006);
+  g.gain.linearRampToValueAtTime(vol, when + 0.004);
+  g.gain.exponentialRampToValueAtTime(vol * 0.4, when + 0.18);
   g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-  o1.connect(g); o2.connect(g); g.connect(c.destination);
-  o1.start(when); o2.start(when); o1.stop(when + dur); o2.stop(when + dur);
+  // Tone darkens as the note rings out.
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(Math.min(9000, f0*8 + 2000), when);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(700, f0*3), when + dur);
+  g.connect(lp).connect(out);
+  const stop = when + dur + 0.05;
+  PARTIAL_GAIN.forEach((amp, idx) => {
+    const n = idx + 1;
+    const o = c.createOscillator(); o.type = 'sine';
+    o.frequency.value = f0 * n * Math.sqrt(1 + INHARMONICITY*n*n);
+    const pg = c.createGain(); pg.gain.value = amp;
+    o.connect(pg).connect(g);
+    o.start(when); o.stop(stop);
+  });
 }
 function playMidi(midi){ const c = ctx(); if (c.state==='suspended') c.resume(); pianoNote(c, midi, c.currentTime, 1.1, 0.22); }
 function playChord(midis){
