@@ -51,7 +51,10 @@ A working **Build-a-Chord** core:
   bass-aware for slash chords (C-E-G-A over C → `C6`, also `Am7/C`). Root-position matches
   rank first. Tab is Pro-gated at entry (`activeTab` falls back to Chords if a saved
   `pc-tab='find'` loads without Pro). 2-note selections show the interval name.
-- Oscillator-based `pianoNote`/`playChord`/`playSeq`/`playMidi` audio (placeholder — port real samples).
+- **Additive synth piano** (`pianoNote`/`playChord`/`playSeq`/`playMidi`): 6 inharmonic sine
+  partials + piano ADSR (fast attack, two-stage decay) + per-note brightness rolloff, through a
+  shared master `bus()` (synthesized convolution reverb, high-shelf, compressor). Not samples,
+  but far past the old two-oscillator beep; still the first thing to replace with real samples.
 - Freemium gate: `FREE_TYPES = 4` (first 4 chord types free), rest open `UpgradeSheet`.
 - **IAP + 7-day trial** (`effectiveLevel` architecture): `owned` (purchased, `pc-level`) vs a
   one-time 7-day trial (`pc-trial-start`); the UI gates on `effectiveLevel(owned,start,now)` =

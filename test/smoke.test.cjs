@@ -133,6 +133,24 @@ test('per-tab contextual tip shows once on first visit', async () => {
   }, { onboarded: true, tips: false });
 });
 
+test('audio: pianoNote renders an audible, decaying, non-clipping tone', async () => {
+  await withApp(async (page) => {
+    // app.js is a classic script, so its synth functions are globals — render the
+    // real pianoNote through an OfflineAudioContext and measure the output.
+    const r = await page.evaluate(async () => {
+      const R = 44100, off = new OfflineAudioContext(1, Math.floor(R*1.3), R);
+      [60,64,67].forEach(m => pianoNote(off, m, 0.01, 1.1, 0.16)); // C major triad
+      const d = (await off.startRendering()).getChannelData(0);
+      const seg = (a,b) => { let s=0,n=0; for (let i=Math.floor(a*R);i<Math.floor(b*R);i++){s+=d[i]*d[i];n++;} return Math.sqrt(s/n); };
+      let peak=0; for (let i=0;i<d.length;i++) if (Math.abs(d[i])>peak) peak=Math.abs(d[i]);
+      return { early: seg(0.02,0.12), late: seg(0.9,1.0), peak };
+    });
+    assert.ok(r.early > 0.005, `produces audible output (early RMS ${r.early})`);
+    assert.ok(r.late < r.early, 'note decays like a piano');
+    assert.ok(r.peak <= 1.0, `no clipping (peak ${r.peak})`);
+  });
+});
+
 test('web Unlock grants Pro locally and persists', async () => {
   await withApp(async (page) => {
     await page.click('text=Scales');
