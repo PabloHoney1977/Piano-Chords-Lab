@@ -3,7 +3,7 @@
 Interactive **piano chord, scale & theory reference** — a freemium iOS PWA. Pick a root and chord type, see it light up across an interactive keyboard, hear it, and learn the theory. The piano-market sibling of [Jazz Guitar Lab](https://github.com/PabloHoney1977/Jazz-Guitar-App).
 
 ## Status
-🚧 **Pre-launch.** The core product is built: 16 chord types with **inversions** (literal-voicing 3-octave keyboard), a **Scales tab** (12 scales/modes), a reverse **Find Chord** tab, all 12 roots, an additive-synth piano, onboarding + tours, dark/light theme, the freemium gate, and **RevenueCat IAP + a 7-day trial** (`effectiveLevel` architecture). App icons, the Capacitor config, and the Codemagic iOS pipeline are in place — the remaining launch work is wiring credentials and porting real piano samples. See "Roadmap" and `CLAUDE.md`.
+🚧 **Pre-launch.** The core product is built: 27 chord types with **inversions** (literal-voicing 3-octave keyboard), a **Scales tab** (20 scales/modes), a reverse **Find Chord** tab, a **Keys** tab (circle of fifths + chords-in-key), all 12 roots, an additive-synth piano, onboarding + tours, dark/light theme, the freemium gate, and **RevenueCat IAP + a 7-day trial** (`effectiveLevel` architecture). App icons, the Capacitor config, and the Codemagic iOS pipeline are in place — the remaining launch work is wiring credentials and porting real piano samples. See "Roadmap" and `CLAUDE.md`.
 
 ## Run locally
 No build step. Serve the folder over http (service worker needs http, not `file://`):
@@ -51,4 +51,4 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 
 ## Freemium split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root position only, Major + Natural Minor scales, all roots, keyboard, audio.
-- **Pro:** all 16+ chord types, all inversions, all 12 scales/modes, reverse lookup, full theory reference. One-time IAP, no subscription.
+- **Pro:** all 27 chord types, all inversions, all 20 scales/modes, reverse lookup, circle of fifths + chords-in-key, full theory reference. One-time IAP, no subscription.

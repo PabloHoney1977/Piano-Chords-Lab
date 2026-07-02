@@ -33,6 +33,17 @@ const CHORDS = [
   {id:'maj9', name:'Major 9',       sym:'maj9',  ivls:[0,4,7,11,14]},
   {id:'min9', name:'Minor 9',       sym:'m9',    ivls:[0,3,7,10,14]},
   {id:'add9', name:'Add 9',         sym:'add9',  ivls:[0,4,7,14]},
+  {id:'dim',    name:'Diminished',      sym:'°',       ivls:[0,3,6]},
+  {id:'7sus4',  name:'7 sus4',          sym:'7sus4',   ivls:[0,5,7,10]},
+  {id:'6/9',    name:'Six-Nine',        sym:'6/9',     ivls:[0,4,7,9,14]},
+  {id:'mMaj7',  name:'Minor-Major 7',   sym:'m(maj7)', ivls:[0,3,7,11]},
+  {id:'7b5',    name:'Dominant 7♭5',    sym:'7♭5',     ivls:[0,4,6,10]},
+  {id:'7s5',    name:'Dominant 7♯5',    sym:'7♯5',     ivls:[0,4,8,10]},
+  {id:'7b9',    name:'Dominant 7♭9',    sym:'7♭9',     ivls:[0,4,7,10,13]},
+  {id:'7s9',    name:'Dominant 7♯9',    sym:'7♯9',     ivls:[0,4,7,10,15]},
+  {id:'maj7s11',name:'Major 7♯11',      sym:'maj7♯11', ivls:[0,4,7,11,18]},
+  {id:'min11',  name:'Minor 11',        sym:'m11',     ivls:[0,3,7,10,14,17]},
+  {id:'dom13',  name:'Dominant 13',     sym:'13',      ivls:[0,4,7,10,14,21]},
 ];
 const FREE_TYPES = 4;
 
@@ -51,6 +62,14 @@ const SCALES = [
   {id:'majpent', name:'Major Pentatonic',   ivls:[0,2,4,7,9]},
   {id:'minpent', name:'Minor Pentatonic',   ivls:[0,3,5,7,10]},
   {id:'blues',   name:'Blues',              ivls:[0,3,5,6,7,10]},
+  {id:'wholetone', name:'Whole Tone',        ivls:[0,2,4,6,8,10]},
+  {id:'dimwh',     name:'Diminished (W–H)',  ivls:[0,2,3,5,6,8,9,11]},
+  {id:'dimhw',     name:'Diminished (H–W)',  ivls:[0,1,3,4,6,7,9,10]},
+  {id:'lydondom',  name:'Lydian Dominant',   ivls:[0,2,4,6,7,9,10]},
+  {id:'phrygdom',  name:'Phrygian Dominant', ivls:[0,1,4,5,7,8,10]},
+  {id:'altered',   name:'Altered (Super Locrian)', ivls:[0,1,3,4,6,8,10]},
+  {id:'bebopdom',  name:'Bebop Dominant',    ivls:[0,2,4,5,7,9,10,11]},
+  {id:'hungmin',   name:'Hungarian Minor',   ivls:[0,2,3,6,7,8,11]},
 ];
 const FREE_SCALES = 2;
 
