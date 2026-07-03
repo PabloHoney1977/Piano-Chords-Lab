@@ -46,7 +46,7 @@ The keys are injected into `www/index.html` at build time (replacing the `__REVE
 - [x] Keys tab: interactive circle of fifths + "chords in this key" (diatonic triads with Roman numerals)
 - [x] Onboarding + two-tier tour (overview on first run / `?` button; per-tab contextual tips)
 - [x] Ear training (ported from Jazz Guitar Lab): 4 modes, difficulty tiers, spaced repetition, auto/TTS
-- [ ] Streak tracking + milestones (port from Jazz Guitar Lab)
+- [x] Streak tracking + milestones (🔥 daily practice streak, celebration modal)
 - [x] Pricing decision — `$6.99` one-time (`app.js` `PRICE`; rationale in `CLAUDE.md`)
 - [x] Smoke tests (Playwright harness)
 

@@ -8,6 +8,11 @@ const { useState, useEffect, useRef } = React;
 const safeLS    = (k, fb='') => { try { const v = localStorage.getItem(k); return v !== null ? v : fb; } catch(_){ return fb; } };
 const safeLSSet = (k, v) => { try { localStorage.setItem(k, v); } catch(_){} };
 
+/* ── Daily practice streak ── */
+const todayStr = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const dayDiff  = (a, b) => Math.round((Date.parse(b+'T00:00:00') - Date.parse(a+'T00:00:00')) / 86400000);
+const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100, 365];
+
 /* ── Single source of truth for price (don't scatter literals like the jazz app did) ── */
 const PRICE = '$6.99'; // one-time Pro unlock; single source of truth. See CLAUDE.md pricing note.
 
@@ -864,6 +869,11 @@ function App(){
   const [upg, setUpg]     = React.useState(null);                    // feature name or null
   const [sel, setSel]     = React.useState([]);                      // Find: selected MIDI notes
   const [tour, setTour]   = React.useState(null);                    // { key, steps } or null
+  const [streak, setStreak] = React.useState(() => ({
+    count: +(safeLS('pc-streak','0') || 0),
+    best:  +(safeLS('pc-streak-best','0') || 0),
+    last:  safeLS('pc-streak-last','') || null }));
+  const [milestone, setMilestone] = React.useState(null);            // celebratory day number or null
 
   React.useEffect(()=>{ document.documentElement.dataset.theme = theme; localStorage.setItem('pc-theme',theme); },[theme]);
   React.useEffect(()=>{ localStorage.setItem('pc-root', root); },[root]);
@@ -908,6 +918,20 @@ function App(){
   const selPCs    = [...new Set(selSorted.map(m => m % 12))];
   const selBassPC = selSorted.length ? selSorted[0] % 12 : null;
   const matches   = selPCs.length >= 3 ? identifyChord(selPCs, selBassPC) : [];
+
+  // Streak still "alive" if the last practice was today or yesterday, else shown as broken.
+  const liveStreak = (!streak.last || dayDiff(streak.last, todayStr()) > 1) ? 0 : streak.count;
+  // Record a day of practice (idempotent per day); called from any musical action.
+  const markPractice = () => setStreak(s => {
+    const today = todayStr();
+    if (s.last === today) return s;                                  // already counted today
+    const count = (s.last && dayDiff(s.last, today) === 1) ? s.count + 1 : 1;
+    const best  = Math.max(s.best, count);
+    safeLSSet('pc-streak', String(count)); safeLSSet('pc-streak-best', String(best)); safeLSSet('pc-streak-last', today);
+    if (STREAK_MILESTONES.includes(count)) setMilestone(count);
+    track('practice.day', { count });
+    return { count, best, last: today };
+  });
 
   const pickType = (i) => {
     if (i >= FREE_TYPES && !isPro){ setUpg(CHORDS[i].name); track('paywall.shown',{feature:CHORDS[i].name}); return; }
@@ -978,6 +1002,11 @@ function App(){
     e('header',{style:{display:'flex',alignItems:'center',gap:10,padding:'14px 0 10px'}},
       e('div',{style:{fontSize:'1.15rem',fontWeight:800,letterSpacing:'-.01em'}},'Piano Chords Lab'),
       e('div',{style:{flex:1}}),
+      liveStreak > 0
+        ? e('span',{ title:liveStreak+'-day practice streak · best '+streak.best,
+            style:{ padding:'5px 9px', borderRadius:20, fontSize:'.72rem', fontWeight:700,
+              border:'1px solid var(--border)', color:'var(--gold)' } }, '🔥 ' + liveStreak)
+        : null,
       e('button',{ onClick:()=>setOwned(owned==='pro'?'essentials':'pro'),
         title:'Toggle owned Pro (dev)', style:{ padding:'5px 10px', borderRadius:20, cursor:'pointer',
           fontSize:'.72rem', fontWeight:700, border:'1px solid var(--border)',
@@ -1004,7 +1033,7 @@ function App(){
     ),
 
     activeTab==='ear'
-    ? e(EarTrainingView,{ key:'ear', level:'pro', onUpgrade:()=>{}, onPracticed:()=>track('ear.practiced') })
+    ? e(EarTrainingView,{ key:'ear', level:'pro', onUpgrade:()=>{}, onPracticed:()=>{ track('ear.practiced'); markPractice(); } })
     : activeTab==='keys'
     ? e(React.Fragment,{key:'keys'},
         /* Circle of fifths */
@@ -1018,7 +1047,7 @@ function App(){
               (keyInfo.sig === '0' ? 'none' : keyInfo.sig))),
           e('div',{style:{fontSize:'.72rem',fontWeight:700,color:'var(--hint)',margin:'0 2px 8px',letterSpacing:'.04em'}},'CHORDS IN THIS KEY'),
           e('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}},
-            diatonic.map((dc,i)=>e('button',{ key:i, onClick:()=>{ playChord(dc.midis); track('diatonic.played',{key:root,roman:dc.roman}); },
+            diatonic.map((dc,i)=>e('button',{ key:i, onClick:()=>{ playChord(dc.midis); markPractice(); track('diatonic.played',{key:root,roman:dc.roman}); },
               style:{ padding:'8px 2px', borderRadius:8, cursor:'pointer', border:'1px solid var(--border)',
                 background:'var(--bg2)', color:'var(--txt)', display:'flex', flexDirection:'column', alignItems:'center', gap:2 } },
               e('span',{style:{fontSize:'.7rem',fontWeight:700,color:'var(--hint)'}}, dc.roman),
@@ -1046,7 +1075,7 @@ function App(){
                 selSorted.map(m=>NOTES[m%12]).join(' · '))
             : null,
           e('div',{style:{display:'flex',gap:8,justifyContent:'center',marginTop:14}},
-            e('button',{ onClick:()=>{ if(selSorted.length) playChord(selSorted); track('find.play',{n:selSorted.length}); },
+            e('button',{ onClick:()=>{ if(selSorted.length){ playChord(selSorted); markPractice(); } track('find.play',{n:selSorted.length}); },
               style:{ padding:'9px 18px', borderRadius:8, cursor:'pointer', fontWeight:700,
                 background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play'),
             e('button',{ onClick:clearSel,
@@ -1069,7 +1098,7 @@ function App(){
           safeInv > 0
             ? e('div',{style:{fontSize:'.72rem',color:'var(--hint)',marginTop:2}}, INV_LABELS[safeInv] + ' inversion')
             : null,
-          e('button',{ onClick:()=>{ playChord(midis); track('chord.played',{chord:ch.id,root,inv:safeInv}); },
+          e('button',{ onClick:()=>{ playChord(midis); markPractice(); track('chord.played',{chord:ch.id,root,inv:safeInv}); },
             style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
               background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play chord')
         ),
@@ -1095,7 +1124,7 @@ function App(){
           e('div',{style:{fontSize:'2rem',fontWeight:800}}, NOTES[root] + ' ' + sc.name),
           e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginTop:4}}, sc.ivls.map(i=>NOTES[(root+i)%12]).join(' · ')),
           e('div',{style:{fontSize:'.72rem',color:'var(--hint)',marginTop:2}}, sc.ivls.length + ' notes'),
-          e('button',{ onClick:()=>{ playSeq(scaleMidis); track('scale.played',{scale:sc.id,root}); },
+          e('button',{ onClick:()=>{ playSeq(scaleMidis); markPractice(); track('scale.played',{scale:sc.id,root}); },
             style:{ marginTop:12, padding:'9px 22px', borderRadius:8, cursor:'pointer', fontWeight:700,
               background:'var(--accent)', border:'none', color:'#07070f' } }, '▶ Play scale')
         ),
@@ -1158,7 +1187,21 @@ function App(){
     upg ? e(UpgradeSheet,{ feature:upg, canTrial, busy,
             onClose:()=>setUpg(null), onUnlock:doUnlock, onStartTrial:doStartTrial, onRestore:doRestore }) : null,
 
-    tour ? e(Tour,{ steps:tour.steps, onClose:closeTour }) : null
+    tour ? e(Tour,{ steps:tour.steps, onClose:closeTour }) : null,
+
+    milestone ? e('div',{ onClick:()=>setMilestone(null),
+        style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', display:'flex',
+          alignItems:'center', justifyContent:'center', zIndex:60, padding:20 } },
+        e('div',{ onClick:ev=>ev.stopPropagation(), style:{ width:'100%', maxWidth:340, textAlign:'center',
+            background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, padding:'28px 22px' } },
+          e('div',{style:{fontSize:'3rem',marginBottom:8}},'🔥'),
+          e('div',{style:{fontSize:'1.3rem',fontWeight:800,marginBottom:6}}, milestone + '-day streak!'),
+          e('div',{style:{fontSize:'.9rem',color:'var(--hint)',marginBottom:18,lineHeight:1.5}},
+            'You’ve practiced ' + milestone + ' days in a row. Keep it going — your ear and theory are compounding.'),
+          e('button',{ onClick:()=>setMilestone(null),
+            style:{ width:'100%', padding:13, borderRadius:10, cursor:'pointer', fontWeight:800,
+              background:'var(--gold)', border:'none', color:'#07070f' } }, 'Nice →'))
+      ) : null
   );
 }
 
