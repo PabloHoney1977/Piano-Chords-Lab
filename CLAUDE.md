@@ -80,9 +80,14 @@ A working **Build-a-Chord** core:
 - **Onboarding + two-tier tour** (`tourStepsFor(key)` + `Tour` carousel): first run shows the
   `overview` tour once (`pc-onboarded`); the header `?` reopens it; first visit to each tab shows
   a one-time contextual tip (`pc-tip-<tab>`). All dismissible; no tab-driving to avoid gating edges.
-- Header with dev Pro toggle (toggles `owned`) + trial countdown + `?` tour + theme toggle.
-  localStorage keys prefixed `pc-` (`pc-root`, `pc-tab`, `pc-level`, `pc-trial-start`, `pc-theme`,
-  `pc-onboarded`, `pc-tip-*`).
+- **Daily practice streak** (`markPractice()` + `todayStr`/`dayDiff`): any musical action (play
+  chord/scale, Find, diatonic, or 5 ear answers) marks the day; consecutive days increment,
+  a gap resets. Header shows a `🔥 N` chip (`liveStreak` = alive if last practice was today/
+  yesterday); `STREAK_MILESTONES` (3/7/14/30/60/100/365) fire a celebration modal. Keys
+  `pc-streak`, `pc-streak-best`, `pc-streak-last`.
+- Header with dev Pro toggle (toggles `owned`) + trial countdown + streak chip + `?` tour + theme
+  toggle. localStorage keys prefixed `pc-` (`pc-root`, `pc-tab`, `pc-level`, `pc-trial-start`,
+  `pc-theme`, `pc-onboarded`, `pc-tip-*`, `pc-streak*`, `pc-ear-*`).
 - `PRICE` constant = single source of truth for the price string (learn from Jazz Guitar Lab,
   where `$9.99` was scattered across ~10 files and had to be swept).
 - `track()` PostHog helper + `__POSTHOG_KEY__` placeholder in `index.html` (no-ops until set).
@@ -94,7 +99,7 @@ A working **Build-a-Chord** core:
   when the iOS project is added.*
 - ✅ **Two-tier tour system** (`tourStepsFor`, overview + per-page contextual tours) — *done.*
 - ✅ **Onboarding** first-run logic — *done (overview tour on first run, `pc-onboarded`).*
-- **Streak tracking** + milestones.
+- ✅ **Streak tracking** + milestones — *done (`markPractice`, `🔥` header chip, milestone modal).*
 
 ## Freemium Split
 - **Free (Essentials):** first 4 chord types (maj, min, dom7, min7), root-position only,

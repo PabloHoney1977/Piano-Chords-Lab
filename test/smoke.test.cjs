@@ -190,6 +190,37 @@ test('Ear training: intro → answer → reveal (Pro)', async () => {
   });
 });
 
+test('streak: practicing increments once per day', async () => {
+  await withApp(async (page) => {
+    assert.ok(!(await page.textContent('header')).includes('🔥'), 'no streak chip before practice');
+    await page.click('text=▶ Play chord');
+    await page.waitForTimeout(120);
+    assert.ok((await page.textContent('header')).includes('🔥 1'), 'streak shows 1 after first practice');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('pc-streak')), '1');
+    await page.click('text=▶ Play chord');                    // same day again
+    await page.waitForTimeout(120);
+    assert.ok((await page.textContent('header')).includes('🔥 1'), 'same-day practice does not double-count');
+  });
+});
+
+test('streak: hitting a milestone shows the celebration', async () => {
+  await withApp(async (page) => {
+    // Seed yesterday's practice with a 2-day streak, then reload.
+    await page.evaluate(() => {
+      const d = new Date(Date.now() - 86400000);
+      const y = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      localStorage.setItem('pc-streak','2'); localStorage.setItem('pc-streak-best','2'); localStorage.setItem('pc-streak-last', y);
+    });
+    await page.reload({ waitUntil:'load' });
+    await page.waitForSelector('header');
+    assert.ok((await page.textContent('header')).includes('🔥 2'), 'carried streak shows 2');
+    await page.click('text=▶ Play chord');                    // → day 3, a milestone
+    await page.waitForSelector('text=3-day streak!');
+    assert.ok((await page.textContent('header')).includes('🔥 3'), 'streak advanced to 3');
+    await page.click('text=Nice');
+  });
+});
+
 test('audio: pianoNote renders an audible, decaying, non-clipping tone', async () => {
   await withApp(async (page) => {
     // app.js is a classic script, so its synth functions are globals — render the
